@@ -1,0 +1,43 @@
+# Локальная конфигурация и секреты
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Сборка
+dist/
+build/
+web/dist/
+
+# База и её файлы в каталоге разработки
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+pgdata/
+postgresdata/
+
+# Тесты и отчёты
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+playwright-report/
+test-results/
+e2e/screenshots/
+
+# Редакторы и операционка
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Логи
+*.log
