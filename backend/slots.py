@@ -1,0 +1,140 @@
+"""Расчёт сетки слотов.
+
+Слоты не хранятся в базе, а вычисляются при каждом запросе. Здесь живёт правило
+их построения, и оно не ходит в базу: на входе обычные объекты, на выходе
+список слотов, всё проверяется тестами за миллисекунды.
+
+Расписание хранит локальное время рабочего окна в часовом поясе эксперта, а
+слоты отдаются в UTC. Перевод делает `zoneinfo`, который знает про переход на
+летнее время, поэтому сетка не разъезжается два раза в год.
+"""
+
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+# Слоты гостю отдаём в UTC, а показывать он их будет в своём поясе.
+# Не длиннее 60 дней за один запрос, иначе ответ получается нечитаемым.
+МАКСИМУМ_ДНЕЙ_В_ЗАПРОСЕ = 60
+
+
+@dataclass(frozen=True, slots=True)
+class Правило:
+    """Всё, что нужно для построения сетки.
+
+    Собрано в один объект, чтобы движок не зависел от моделей SQLAlchemy: его
+    можно проверить на обычных dataclass без базы и без ORM.
+    """
+
+    weekdays: frozenset[int]
+    """Дни недели, где 1 это понедельник и 7 это воскресенье."""
+
+    start_time: time
+    end_time: time
+    timezone: str
+    duration: timedelta
+    increment: timedelta
+    min_notice: timedelta
+    horizon: timedelta
+    max_guests: int = 1
+
+    taken: dict[datetime, int] = field(default_factory=dict)
+    """Сколько мест занято в каждом слоте. Считает обработчик запросом в базу."""
+
+    closed: frozenset[datetime] = frozenset()
+    """Слоты, куда заявки больше не принимаются: состав закреплён или встреча
+    отменена. Слоты в сетке такие, чтобы гость видел, что время занято."""
+
+
+@dataclass(frozen=True, slots=True)
+class Слот:
+    """Конкретный промежуток, который можно занять."""
+
+    start_at: datetime
+    end_at: datetime
+    max_guests: int
+    taken: int
+    is_open: bool
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.max_guests - self.taken)
+
+    @property
+    def can_request(self) -> bool:
+        return self.is_open and self.remaining > 0
+
+
+def build_slots(правило: Правило, *, now: datetime | None = None) -> list[Слот]:
+    """Собрать сетку слотов от `now` на `horizon` вперёд.
+
+    Слот попадает в сетку, если целиком помещается в рабочее окно и до его
+    начала осталось не меньше `min_notice`. Занятый слот из сетки не убираем:
+    гость должен видеть, что время есть, но записаться на него нельзя.
+    """
+    момент = now or datetime.now(UTC)
+    пояс = ZoneInfo(правило.timezone)
+    раньше_всего = момент + правило.min_notice
+    # Горизонт проверяется по времени, а не только по дате. Иначе в день, когда
+    # сетка начинается, запрос увидел бы слоты до конца окна, то есть дальше
+    # горизонта.
+    позже_всего = момент + правило.horizon
+
+    слоты: list[Слот] = []
+    день = момент.astimezone(пояс).date()
+    последний = позже_всего.astimezone(пояс).date()
+
+    while день <= последний:
+        if день.isoweekday() in правило.weekdays:
+            слоты.extend(
+                _слоты_за_день(правило, день, пояс, раньше_всего, позже_всего)
+            )
+        день += timedelta(days=1)
+
+    return слоты
+
+
+def _слоты_за_день(
+    правило: Правило,
+    день: date,
+    пояс: ZoneInfo,
+    раньше_всего: datetime,
+    позже_всего: datetime,
+) -> list[Слот]:
+    """Слоты одного дня рабочего окна."""
+    начало_окна = datetime.combine(день, правило.start_time, tzinfo=пояс)
+    конец_окна = datetime.combine(день, правило.end_time, tzinfo=пояс)
+
+    слоты = []
+    начало = начало_окна
+    # Условие цикла заодно проверяет инвариант И4: слот должен целиком помещаться
+    # в окно, поэтому время конца не больше конца окна.
+    while начало + правило.duration <= конец_окна:
+        начало_utc = начало.astimezone(UTC)
+        if раньше_всего <= начало_utc <= позже_всего:
+            слоты.append(
+                Слот(
+                    start_at=начало_utc,
+                    end_at=(начало + правило.duration).astimezone(UTC),
+                    max_guests=правило.max_guests,
+                    taken=правило.taken.get(начало_utc, 0),
+                    is_open=начало_utc not in правило.closed,
+                )
+            )
+        начало += правило.increment
+
+    return слоты
+
+
+def find_slot(
+    правило: Правило, start_at: datetime, *, now: datetime | None = None
+) -> Слот | None:
+    """Найти слот на указанное время.
+
+    Заявка допустима только на время, которое действительно есть в сетке. Иначе
+    гость отправил бы её на `10:07`, которого в расписании нет.
+    """
+    for слот in build_slots(правило, now=now):
+        if слот.start_at == start_at:
+            return слот
+    return None

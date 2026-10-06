@@ -14,6 +14,15 @@ export default defineConfig({
       "/auth": { target: "http://127.0.0.1:8000", changeOrigin: true },
     },
   },
+  // Тот же прокси для `vite preview`: собранный вариант тоже должен ходить в
+  // сервис, а не искать его на своём порту.
+  preview: {
+    port: 4173,
+    proxy: {
+      "/api": { target: "http://127.0.0.1:8000", changeOrigin: true },
+      "/auth": { target: "http://127.0.0.1:8000", changeOrigin: true },
+    },
+  },
   build: {
     outDir: "dist",
     sourcemap: true,

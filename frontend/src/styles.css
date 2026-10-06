@@ -1,66 +1,55 @@
 /* ==========================================================================
-   Оформление панели эксперта.
+   Оформление сервиса записи на встречи.
 
-   Библиотек компонентов здесь нет: всё собрано из обычных свойств CSS.
-   Правило простое: чёрным написан текст, а цветом помечены только состояния
-   и кнопки. Иначе страница превращается в радугу и перестаёт читаться.
+   Система взята с образца: приглушённый серо-фиолетовый как акцент, чёрный
+   как текст и кнопки, белый как фон. Схема сознательно чёрно-белая: цветом
+   помечено только состояние, а всё останое различается тоном и линиями.
+
+   Правила, по которым построен интерфейс:
+     1. Отступы кратны 8.
+     2. Радиус один: 5 у кнопок, полей и панелей.
+     3. Теней нет: плоскости разделяет линия и воздух.
+     4. Один переход: 400ms ease, и он гасится при prefers-reduced-motion.
+     5. Единственная точка схлопывания: 768.
 
    Порядок разделов:
-     1. Токены и темы
-     2. База и вспомогательные классы
-     3. Кнопки
-     4. Шапка, карточки, подвал
-     5. Узкий экран
+     1. Токены
+     2. База
+     3. Каркас страницы: шапка, колонки
+     4. Элементы: кнопки, поля, список, слот
+     5. Пустые состояния и узкий экран
    ========================================================================== */
 
-/* 1. Токены и темы -------------------------------------------------------- */
+/* 1. Токены --------------------------------------------------------------- */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
-  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
-  --bg: #f2f4f8;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f7f8fb;
-  --border: #dde1e9;
-  --border-strong: #c3c9d6;
+  --surface-2: #f7f7f8;
+  --border: #e5e5e7;
+  --border-strong: #d4d4d8;
 
-  --text: #12161f;
-  --text-muted: #58616f;
+  /* Текст. Чёрный вместо приглушённого серого: тот не дотягивает до
+     контраста 4.5:1 и на длинном тексте читается тяжело. */
+  --text: #18181b;
+  --text-muted: #71717a;
 
-  --accent: #2f5bd8;
-  --accent-text: #ffffff;
+  /* Акцент из образца. Годится для линий и отметок, но не для текста:
+     на белом он даёт 3.2:1, ниже порога для чтения. */
+  --accent: #8e8ea0;
+  --on-primary: #ffffff;
 
-  --radius: 12px;
-  --radius-lg: 16px;
-
-  --shadow-1: 0 1px 2px rgb(16 22 34 / 6%), 0 1px 1px rgb(16 22 34 / 4%);
-
-  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --radius: 5px;
+  --ease: ease;
+  --duration: 400ms;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0c0f15;
-    --surface: #151a22;
-    --surface-2: #1a202a;
-    --border: #262d38;
-    --border-strong: #38414f;
-
-    --text: #e8ecf3;
-    --text-muted: #98a2b3;
-
-    --accent: #7a9bff;
-    --accent-text: #0c0f15;
-
-    --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
-  }
-}
-
-/* 2. База и вспомогательные классы ---------------------------------------- */
+/* 2. База ----------------------------------------------------------------- */
 
 * {
   box-sizing: border-box;
@@ -77,38 +66,330 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 16px;
-  line-height: 1.55;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
 h1,
 h2,
+h3,
 p,
 dl,
-dd {
+dd,
+ul {
   margin: 0;
 }
 
-.заголовок {
-  font-size: 1.6rem;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+ul {
+  list-style: none;
+  padding: 0;
 }
 
-.текст {
-  font-size: 0.97rem;
+button {
+  font-family: inherit;
 }
 
-.текст--приглушенный {
+a {
+  color: var(--text);
+}
+
+/* 3. Каркас страницы ------------------------------------------------------ */
+
+.оболочка {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100dvh;
+}
+
+.шапка {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 64px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.шапка__название {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.тело {
+  display: grid;
+  grid-template-columns: 264px 1fr;
+  align-items: start;
+}
+
+.колонка {
+  padding: 24px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  min-height: calc(100dvh - 64px);
+}
+
+.содержимое {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 880px;
+}
+
+/* Узкая колонка: вход и сообщения об ошибках, где тексту много места не нужно.
+   `justify-self` вместо автоматических полей, см. `.страница-гостя`. */
+.узкая {
+  max-width: 480px;
+  width: 100%;
+  justify-self: center;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Страница гостя: сетка свободного времени должна вмещать несколько
+   колонок, поэтому ширина тут заметно больше, чем у экрана входа.
+
+   Растягиваем именно себя (`justify-self`), а не через `margin: auto`:
+   внутри grid-родителя автоматические поля схлопывают колонку по контенту,
+   и блок с ограничением ширины оказывается уже, чем задумано. */
+.страница-гостя {
+  max-width: 960px;
+  width: 100%;
+  justify-self: center;
+  padding: 32px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Карточка записи: слева кто принимает, справа календарь и время.
+   Две колонки, как в привычных сервисах записи: приветствие организатора
+   должно быть видно сразу, не прокручивая список времени. */
+.карточка-записи {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.карточка-записи__слева {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 32px;
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.карточка-записи__справа {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px;
+  min-width: 0;
+}
+
+/* Календарь */
+
+.календарь__шапка {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.календарь {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.календарь__название {
+  padding: 8px 0;
   color: var(--text-muted);
+  font-size: 0.75rem;
+  text-align: center;
 }
 
-.моно {
+.календарь__день {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9375rem;
+  cursor: pointer;
+  transition:
+    background-color var(--duration) var(--ease),
+    border-color var(--duration) var(--ease);
+}
+
+.календарь__день:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.календарь__день[aria-pressed="true"] {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--on-primary);
+}
+
+/* День без свободного времени остаётся видимым, но не выглядит как ошибка. */
+.календарь__день:disabled {
+  color: var(--border-strong);
+  cursor: default;
+}
+
+.календарь__день[data-прошел="да"] {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+/* Строки-свойства встречи: без вертикального отступа и с нижней линией. */
+.свойства {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.свойства .строка {
+  padding: 12px 0;
+}
+
+.свойства .строка + .строка {
+  border-top: 1px solid var(--border);
+}
+
+.меню__почта {
+  padding: 0 12px 8px;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+/* Меню пользователя */
+
+.меню {
+  position: relative;
+}
+
+.меню__кнопка {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9375rem;
+  cursor: pointer;
+  transition: background-color var(--duration) var(--ease);
+}
+
+.меню__кнопка:hover {
+  background: var(--surface-2);
+}
+
+.меню__подпись {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.меню__список {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 208px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  z-index: 20;
+}
+
+.меню__пункт {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9375rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--duration) var(--ease);
+}
+
+.меню__пункт:hover {
+  background: var(--surface-2);
+}
+
+/* Список встреч в боковой колонке */
+
+.встречи {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.встреча {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration) var(--ease);
+}
+
+.встреча:hover {
+  background: var(--surface-2);
+}
+
+.встреча[aria-current="true"] {
+  border-left-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.встреча__имя {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.встреча__путь {
+  color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-size: 0.75rem;
 }
 
-/* 3. Кнопки --------------------------------------------------------------- */
+.счётчик {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+/* 4. Элементы ------------------------------------------------------------- */
 
 .кнопка {
   display: inline-flex;
@@ -121,13 +402,14 @@ dd {
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  font-family: inherit;
-  font-size: 0.97rem;
-  font-weight: 550;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
   transition:
-    background-color 120ms var(--ease),
-    border-color 120ms var(--ease);
+    background-color var(--duration) var(--ease),
+    border-color var(--duration) var(--ease),
+    transform var(--duration) var(--ease);
 }
 
 .кнопка:hover {
@@ -135,120 +417,295 @@ dd {
   border-color: var(--text-muted);
 }
 
+.кнопка:active {
+  transform: translateY(1px);
+}
+
 .кнопка:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
+.кнопка:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Главное действие чёрное: белый текст на приглушённом сером не набирает
+   нужного контраста, а чёрный на белом читается без напряга. */
 .кнопка--главная {
-  width: 100%;
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--on-primary);
 }
 
 .кнопка--главная:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-  filter: brightness(1.08);
+  background: #000000;
+  border-color: #000000;
 }
 
 .кнопка--тихая {
-  min-height: 34px;
+  min-height: 32px;
   padding: 0 12px;
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-size: 0.875rem;
+  font-weight: 400;
 }
 
-/* 4. Шапка, карточки, подвал ---------------------------------------------- */
+.кнопка--вся {
+  width: 100%;
+}
 
-.страница {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 40px 20px 80px;
+.поле {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  font-size: 0.9375rem;
 }
 
-.страница--узкая {
-  max-width: 420px;
-  justify-content: center;
-  min-height: 100vh;
+.поле > span {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.поле input {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9375rem;
+  transition: border-color var(--duration) var(--ease);
+}
+
+.поле input::placeholder {
+  color: var(--text-muted);
+}
+
+.поле input:focus {
+  outline: none;
+  border-color: var(--text);
+}
+
+.поле--галочка {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.поле--галочка input {
+  min-height: auto;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  accent-color: var(--text);
+}
+
+.пара {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
 
-.шапка {
+.дни {
+  display: flex;
+  gap: 8px;
+}
+
+.день {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition:
+    background-color var(--duration) var(--ease),
+    color var(--duration) var(--ease);
+}
+
+.день[aria-pressed="true"] {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--on-primary);
+}
+
+.строка {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  padding: 16px 0;
 }
 
-.карточка {
+.строка + .строка {
+  border-top: 1px solid var(--border);
+}
+
+.строка__имя {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.строка__почта,
+.строка__когда {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.строка__когда {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.слоты {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
+  gap: 8px;
+}
+
+.слот {
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--duration) var(--ease),
+    border-color var(--duration) var(--ease),
+    transform var(--duration) var(--ease);
+}
+
+.слот:hover:not(:disabled) {
+  border-color: var(--text);
+  background: var(--surface-2);
+}
+
+.слот:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.слот:disabled {
+  color: var(--text-muted);
+  background: var(--surface-2);
+  cursor: not-allowed;
+}
+
+.разделитель {
+  height: 1px;
+  background: var(--border);
+}
+
+.заголовок {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+.подзаголовок {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+.текст {
+  font-size: 1rem;
+}
+
+.текст--приглушенный {
+  color: var(--text-muted);
+}
+
+.текст--ошибка {
+  color: #b42318;
+}
+
+.мелкий {
+  font-size: 0.875rem;
+}
+
+.моно {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.группа {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
-}
-
-.карточка--вход {
   gap: 16px;
-  text-align: center;
 }
 
-.карточка--вход .текст--приглушенный {
-  text-align: left;
-}
+/* 5. Пустые состояния и узкий экран -------------------------------------- */
 
-.список-пар {
-  display: grid;
-  grid-template-columns: minmax(120px, auto) 1fr;
-  gap: 8px 16px;
-}
-
-.список-пар dt {
-  color: var(--text-muted);
-  font-size: 0.92rem;
-}
-
-.список-пар dd {
-  overflow-wrap: anywhere;
-}
-
-.подвал {
-  position: fixed;
-  inset-inline: 0;
-  bottom: 0;
+.пусто {
   display: flex;
-  justify-content: center;
-  padding: 12px;
-  background: linear-gradient(to top, var(--bg) 60%, transparent);
-  pointer-events: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 48px 0;
 }
 
-.подвал .кнопка {
-  pointer-events: auto;
-}
-
-/* 5. Узкий экран ---------------------------------------------------------- */
-
-@media (max-width: 520px) {
-  .страница {
-    padding: 24px 16px 72px;
-  }
-
-  .список-пар {
+@media (max-width: 768px) {
+  .тело {
     grid-template-columns: 1fr;
-    gap: 2px 0;
   }
 
-  .список-пар dd {
-    margin-bottom: 10px;
+  .карточка-записи {
+    grid-template-columns: 1fr;
+  }
+
+  .карточка-записи__слева {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 24px;
+  }
+
+  .карточка-записи__справа {
+    padding: 24px;
+  }
+
+  .колонка {
+    position: static;
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .встречи {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .встреча {
+    white-space: nowrap;
+  }
+
+  .пара {
+    grid-template-columns: 1fr;
+  }
+
+  .слоты {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .шапка,
+  .колонка,
+  .содержимое {
+    padding: 16px;
   }
 }
 

@@ -32,7 +32,15 @@ from backend.config import get_settings
 
 # Порядок очистки не важен: внешних ключей между этими таблицами нет, а
 # ограничения проверяются на вставке, а не на очистке.
-ТАБЛИЦЫ = ("auth_sessions", "oauth_tokens", "users")
+ТАБЛИЦЫ = (
+    "bookings",
+    "sessions",
+    "event_types",
+    "schedules",
+    "auth_sessions",
+    "oauth_tokens",
+    "users",
+)
 
 
 @pytest.fixture(scope="session")
