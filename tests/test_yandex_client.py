@@ -31,7 +31,7 @@ CLIENT_ID = "a1b2c3d4"
 CLIENT_SECRET = "секрет-приложения"
 REDIRECT_URI = "http://localhost:8000/auth/yandex/callback"
 
-SCOPE = "login:email login:info"
+SCOPE = "login:info login:email"
 OPTIONAL_SCOPE = "telemost-api:conferences.create"
 
 # Ответ Яндекса на обмен кода. `expires_in` задан заранее, чтобы не ждать.

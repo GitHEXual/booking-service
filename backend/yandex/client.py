@@ -27,16 +27,23 @@ AUTHORIZE_URL = "https://oauth.yandex.ru/authorize"
 TOKEN_URL = "https://oauth.yandex.ru/token"
 USERINFO_URL = "https://login.yandex.ru/info"
 
-DEFAULT_SCOPE = "login:email login:info"
-DEFAULT_OPTIONAL_SCOPE = (
-    "telemost-api:conferences.create "
-    "telemost-api:conferences.read "
-    "telemost-api:conferences.update"
-)
+DEFAULT_SCOPE = "login:info login:email"
+
+# Права Телемоста нужны, чтобы создавать встречи от имени эксперта, и приходят
+# из настройки `YANDEX_OPTIONAL_SCOPE`. Запрашивать их можно только когда они
+# есть у приложения: Яндекс отвечает на право, которого нет в перечне при
+# регистрации, ошибкой `invalid_scope` и отменяет всю авторизацию. Поэтому
+# список пустой, а включается одной строкой в `.env`.
+#
+# Текущие права приложения: https://oauth.yandex.ru/client/<client_id>/info
 
 # Яндекс отвечает ошибкой и кодом, а не текстом. Отказ человека и отказ по
 # неверному коду это разные вещи: первый это его выбор, второй ошибка.
 ОТКАЗ_ПОЛЬЗОВАТЕЛЯ = "access_denied"
+
+# Прав, которых нет у приложения. Отличаем от прочих ошибок, потому что
+# человек тут ни при чём: дело в настройке приложения, и виноват код.
+НЕТ_ТАКИХ_ПРАВ = "invalid_scope"
 
 # Сколько секунд вычитаем из срока токена, чтобы не успеть уехать за границу.
 ЗАПАС_ПЕРЕД_ИСТЕЧЕНИЕМ_СЕКУНД = 60
@@ -90,7 +97,7 @@ def build_authorize_url(
     client_id: str,
     redirect_uri: str,
     scope: str = DEFAULT_SCOPE,
-    optional_scope: str = DEFAULT_OPTIONAL_SCOPE,
+    optional_scope: str = "",
 ) -> str:
     """Адрес, на который отправляем человека для согласия."""
     параметры = {
@@ -98,11 +105,14 @@ def build_authorize_url(
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "scope": scope,
-        "optional_scope": optional_scope,
         "state": state,
         "code_challenge": _challenge(code_verifier),
         "code_challenge_method": "S256",
     }
+    # Пустой `optional_scope` не отправляем: Яндекс считает это запросом
+    # дополнительных прав и отвечает `invalid_scope`, даже если список пуст.
+    if optional_scope:
+        параметры["optional_scope"] = optional_scope
     return f"{AUTHORIZE_URL}?{urlencode(параметры)}"
 
 

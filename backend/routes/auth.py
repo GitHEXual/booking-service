@@ -37,6 +37,7 @@ from backend.session_tokens import (
     new_session_expiry,
 )
 from backend.yandex.client import (
+    НЕТ_ТАКИХ_ПРАВ,
     YandexAuthDeniedError,
     YandexOAuthError,
     build_authorize_url,
@@ -54,6 +55,19 @@ router = APIRouter(prefix="/auth", tags=["вход"])
 # Куда отправляем после входа. Отдельная страница профиля, а не корень: на этом
 # этапе у эксперта ещё нет ни расписания, ни видов встреч.
 ПОСЛЕ_ВХОДА = "/profile"
+
+
+def адрес_после_входа(настройки: Settings) -> str:
+    """Полный адрес страницы, на которую возвращаем после входа.
+
+    Яндекс возвращает человека на адрес сервиса, а страница профиля живёт на
+    интерфейсе. В разработке это разные порты, поэтому адрес собирается из
+    `APP_BASE_URL`: иначе редирект увёл бы на сервис, где страницы нет.
+
+    Хвост адреса отбрасывается, чтобы настройка работала и с портом, и без
+    него: `http://localhost:5173` и `http://localhost:5173/` дают одно и то же.
+    """
+    return f"{настройки.app_base_url.rstrip('/')}{ПОСЛЕ_ВХОДА}"
 
 
 async def require_expert(
@@ -122,6 +136,7 @@ async def начать_вход(response: Response, настройки: Settings
         code_verifier=верификатор,
         client_id=настройки.yandex_client_id,
         redirect_uri=настройки.yandex_redirect_uri,
+        optional_scope=настройки.yandex_optional_scope,
     )
     response.headers["location"] = адрес
     response.status_code = 307
@@ -152,6 +167,15 @@ async def завершить_вход(
 ) -> Response:
     """Принять код от Яндекса и выдать сессию."""
     if error:
+        # Текст ошибки выбираем по коду, а не один на все случаи. Иначе отказ
+        # человека и неверная настройка приложения выглядят одинаково, и
+        # человек зря ищет у себя проблему, которой нет.
+        if error == НЕТ_ТАКИХ_ПРАВ:
+            raise HTTPException(
+                500,
+                "У приложения нет запрошенных прав доступа. "
+                "Их нужно добавить в настройках приложения Яндекс OAuth.",
+            )
         raise HTTPException(400, "Вы не разрешили приложению доступ. Попробуйте ещё раз.")
 
     if not code:
@@ -204,7 +228,7 @@ async def завершить_вход(
     # второй раз применить нельзя.
     положить_куку(response, временная_кука_авторизации(""))
 
-    response.headers["location"] = ПОСЛЕ_ВХОДА
+    response.headers["location"] = адрес_после_входа(настройки)
     response.status_code = 307
     return response
 

@@ -1,0 +1,267 @@
+/* ==========================================================================
+   Оформление панели эксперта.
+
+   Библиотек компонентов здесь нет: всё собрано из обычных свойств CSS.
+   Правило простое: чёрным написан текст, а цветом помечены только состояния
+   и кнопки. Иначе страница превращается в радугу и перестаёт читаться.
+
+   Порядок разделов:
+     1. Токены и темы
+     2. База и вспомогательные классы
+     3. Кнопки
+     4. Шапка, карточки, подвал
+     5. Узкий экран
+   ========================================================================== */
+
+/* 1. Токены и темы -------------------------------------------------------- */
+
+:root {
+  color-scheme: light dark;
+
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --bg: #f2f4f8;
+  --surface: #ffffff;
+  --surface-2: #f7f8fb;
+  --border: #dde1e9;
+  --border-strong: #c3c9d6;
+
+  --text: #12161f;
+  --text-muted: #58616f;
+
+  --accent: #2f5bd8;
+  --accent-text: #ffffff;
+  --accent-soft: #eef2fd;
+
+  --danger: #b42318;
+  --danger-soft: #fdf1f0;
+
+  --radius: 12px;
+  --radius-lg: 16px;
+
+  --shadow-1: 0 1px 2px rgb(16 22 34 / 6%), 0 1px 1px rgb(16 22 34 / 4%);
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c0f15;
+    --surface: #151a22;
+    --surface-2: #1a202a;
+    --border: #262d38;
+    --border-strong: #38414f;
+
+    --text: #e8ecf3;
+    --text-muted: #98a2b3;
+
+    --accent: #7a9bff;
+    --accent-text: #0c0f15;
+    --accent-soft: #1a2340;
+
+    --danger: #ff8a80;
+    --danger-soft: #2a1614;
+
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+  }
+}
+
+/* 2. База и вспомогательные классы ---------------------------------------- */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+p,
+dl,
+dd {
+  margin: 0;
+}
+
+.заголовок {
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.текст {
+  font-size: 0.97rem;
+}
+
+.текст--приглушенный {
+  color: var(--text-muted);
+}
+
+.моно {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+
+/* 3. Кнопки --------------------------------------------------------------- */
+
+.кнопка {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.97rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    background-color 120ms var(--ease),
+    border-color 120ms var(--ease);
+}
+
+.кнопка:hover {
+  background: var(--surface-2);
+  border-color: var(--text-muted);
+}
+
+.кнопка:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.кнопка--главная {
+  width: 100%;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.кнопка--главная:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}
+
+.кнопка--тихая {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* 4. Шапка, карточки, подвал ---------------------------------------------- */
+
+.страница {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.страница--узкая {
+  max-width: 420px;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 16px;
+}
+
+.шапка {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.карточка {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+
+.карточка--вход {
+  gap: 16px;
+  text-align: center;
+}
+
+.карточка--вход .текст--приглушенный {
+  text-align: left;
+}
+
+.список-пар {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr;
+  gap: 8px 16px;
+}
+
+.список-пар dt {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.список-пар dd {
+  overflow-wrap: anywhere;
+}
+
+.подвал {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  background: linear-gradient(to top, var(--bg) 60%, transparent);
+  pointer-events: none;
+}
+
+.подвал .кнопка {
+  pointer-events: auto;
+}
+
+/* 5. Узкий экран ---------------------------------------------------------- */
+
+@media (max-width: 520px) {
+  .страница {
+    padding: 24px 16px 72px;
+  }
+
+  .список-пар {
+    grid-template-columns: 1fr;
+    gap: 2px 0;
+  }
+
+  .список-пар dd {
+    margin-bottom: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 1ms !important;
+  }
+}

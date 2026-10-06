@@ -1,0 +1,12 @@
+# Зависимости и сборка
+node_modules/
+dist/
+
+# Отчёты и логи
+*.log
+npm-debug.log*
+
+# Редакторы
+.vscode/
+.idea/
+.DS_Store

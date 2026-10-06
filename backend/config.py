@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     yandex_client_secret: str
     yandex_redirect_uri: str
 
+    # Права Телемоста. Пусто, пока их нет у приложения: право, которого нет в
+    # настройках приложения, отменяет всю авторизацию, а не только выдачу
+    # токена. Вписать сюда `telemost-api:conferences.create` и остальные можно
+    # после того, как они появятся на странице приложения в кабинете OAuth.
+    yandex_optional_scope: str = ""
+
     smtp_host: str = "smtp.yandex.ru"
     smtp_port: int = 465
     smtp_username: str

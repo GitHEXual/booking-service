@@ -11,9 +11,14 @@ import httpx
 import pytest
 from sqlalchemy import select, text
 
+from backend.config import get_settings
 from backend.models import AuthSession, OAuthToken, User
 from backend.session_tokens import hash_token
 from backend.yandex.client import USERINFO_URL
+
+# Адрес интерфейса из настроек. Читаем его здесь, а не пишем константой,
+# чтобы тест проверял настоящее поведение, а не совпадение с зашитым адресом.
+БАЗА_ИНТЕРФЕЙСА = get_settings().app_base_url.rstrip("/")
 
 ПРОФИЛЬ = {
     "id": "1000034427",
@@ -102,6 +107,30 @@ class TestНачалоВхода:
         assert "client_id=" in адрес
         assert "state=" in адрес
 
+    async def test_без_прав_телемоста_не_просим(self, клиент_приложения):
+        # Пока у приложения нет прав Телемоста, их нельзя запрашивать: Яндекс
+        # отвечает `invalid_scope` и отменяет всю авторизацию, то есть человек
+        # не попадает даже в панель.
+        ответ = await начять_вход(клиент_приложения)
+        assert "optional_scope" not in ответ.headers["location"]
+
+    async def test_права_телемоста_добавляются_к_запросу(
+        self, клиент_приложения, приложение
+    ):
+        # Как только права появятся в настройке, они должны уйти в адрес.
+        # Проверяем настройку, а не само значение: состав прав задаёт Яндекс.
+        настройки = get_settings().model_copy(
+            update={"yandex_optional_scope": "telemost-api:conferences.create"}
+        )
+        приложение.dependency_overrides[get_settings] = lambda: настройки
+        try:
+            ответ = await начять_вход(клиент_приложения)
+        finally:
+            приложение.dependency_overrides.pop(get_settings)
+        assert "optional_scope=telemost-api%3Aconferences.create" in ответ.headers[
+            "location"
+        ]
+
     async def test_каждый_раз_новый_state(self, клиент_приложения):
         # Иначе подделать ответ авторизации было бы легко.
         первый = await начять_вход(клиент_приложения)
@@ -127,6 +156,17 @@ class TestОшибкиВхода:
             params={"error": "access_denied", "state": "любое"},
         )
         assert ответ.status_code == 400
+
+    async def test_незарегистрированные_права_дают_500(self, клиент_приложения):
+        # Прав, которых нет у приложения, нет и у человека: он ничего не мог
+        # сделать неправильно. Отвечать «вы не разрешили доступ» здесь нельзя,
+        # человек станет искать у себя проблему, которой нет.
+        ответ = await клиент_приложения.get(
+            "/auth/yandex/callback",
+            params={"error": "invalid_scope", "state": "любое"},
+        )
+        assert ответ.status_code == 500
+        assert "прав" in ответ.json()["detail"]
 
     async def test_чужой_state_даёт_403(self, клиент_приложения, подменяем_яндекса):
         # Человеку подсунули ссылку с чужим кодом. Ответ принимать нельзя.
@@ -159,10 +199,13 @@ class TestОшибкиВхода:
 
 class TestУспешныйВход:
     async def test_ведёт_в_профиль(self, клиент_приложения, подменяем_яндекса):
+        # Адрес собирается из APP_BASE_URL: Яндекс возвращает человека на
+        # сервис, а страница профиля живёт на интерфейсе, и в разработке это
+        # разные порты.
         подменяем_яндекса()
         ответ = await завершить_вход(клиент_приложения)
         assert ответ.status_code == 307
-        assert ответ.headers["location"] == "/profile"
+        assert ответ.headers["location"] == f"{БАЗА_ИНТЕРФЕЙСА}/profile"
 
     async def test_выдаёт_куку_сессии(self, клиент_приложения, подменяем_яндекса):
         подменяем_яндекса()
