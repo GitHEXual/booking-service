@@ -24,6 +24,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      # Настройки pytest и ruff тоже из файла: иначе контейнер проверял бы
+      # тесты по правилам из образа, собранного до правки настроек.
+      - ./pyproject.toml:/srv/pyproject.toml
       - ./app:/srv/app
       - ./tests:/srv/tests
     depends_on:

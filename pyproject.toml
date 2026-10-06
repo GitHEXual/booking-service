@@ -36,6 +36,10 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Один цикл событий на весь прогон: движок базы и пул соединений живут дольше
+# одного теста, и создавать их на каждый тест дорого.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 filterwarnings = ["error"]
 
 [tool.ruff]
@@ -44,3 +48,9 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# `Depends(...)` в аргументах обработчика это способ, которым FastAPI объявляет
+# зависимости. Проверка видит вызов функции в значении по умолчанию и ругается
+# на каждый обработчик, поэтому здесь её отключаем.
+"app/routes/*.py" = ["B008"]

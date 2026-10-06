@@ -16,6 +16,7 @@
 import base64
 import hashlib
 import secrets
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
@@ -39,6 +40,10 @@ DEFAULT_OPTIONAL_SCOPE = (
 
 # Сколько секунд вычитаем из срока токена, чтобы не успеть уехать за границу.
 ЗАПАС_ПЕРЕД_ИСТЕЧЕНИЕМ_СЕКУНД = 60
+
+# Сколько ждём ответа Яндекса. Больше не нужно: если Яндекс думает дольше,
+# человек всё равно увидит ошибку и попробует ещё раз.
+ТАЙМАУТ_СЕКУНД = 10.0
 
 
 class YandexOAuthError(Exception):
@@ -204,3 +209,13 @@ async def fetch_profile(http: httpx.AsyncClient, *, access_token: str) -> dict[s
         raise YandexOAuthError("Яндекс не отдал профиль")
 
     return ответ.json()  # type: ignore[no-any-return]
+
+
+async def get_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+    """Клиент httpx на время запроса.
+
+    Отдельная зависимость, а не клиент внутри модуля: так тесты подменяют
+    транспорт, не трогая этот код.
+    """
+    async with httpx.AsyncClient(timeout=ТАЙМАУТ_СЕКУНД) as клиент:
+        yield клиент
