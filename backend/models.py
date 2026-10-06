@@ -210,6 +210,19 @@ class Session(Base):
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Ссылка на встречу. Заполняется либо из Телемоста, либо вручную: пока у
+    # приложения нет прав на API Телемоста, единственный способ провести
+    # встречу это дать эксперту вписать ссылку самому.
+    conference_id: Mapped[str | None] = mapped_column(String(128))
+    join_url: Mapped[str | None] = mapped_column(String(512))
+    # Пароль встречи, общий для участников. Шифруется, как и остальные
+    # персональные данные: в письме он уходит каждому гостю отдельно.
+    meeting_password: Mapped[str | None] = mapped_column(EncryptedText("PII_ENCRYPTION_KEY"))
+    # not_created / ready / failed: что удалось сделать со ссылкой.
+    conference_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="not_created"
+    )
+
     bookings: Mapped[list[Booking]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
@@ -272,6 +285,43 @@ class Booking(Base):
 # `/u/ivan/konsultaciya` могут совпадать, у одного эксперта два одинаковых адреса
 # означали бы две ссылки на одну встречу, и гостю пришлось бы выбирать.
 Index("uq_event_type_owner_slug", EventType.owner_id, EventType.slug, unique=True)
+
+class OutboxEvent(Base):
+    """Письмо, которое предстоит отправить.
+
+    Живёт в базе, а не в памяти воркера: иначе письмо, записанное при работающем
+    сервере, потерялось бы при перезапуске, и гость остался бы без ссылки.
+    """
+
+    __tablename__ = "outbox_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Повод письма: `meeting_soon` это встреча через несколько минут.
+    kind: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    booking_id: Mapped[int] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    # Адрес зашифрован: он же лежит в самой заявке, но в очереди он нужен
+    # отдельно, чтобы не тянуть заявку ради отправки.
+    to_email: Mapped[str] = mapped_column(
+        EncryptedText("PII_ENCRYPTION_KEY"), nullable=False
+    )
+    # Тема и текст письма готовятся заранее, а не в момент отправки: так письмо
+    # уходит одинаковым, даже если встреча уже началась.
+    subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(String, nullable=False)
+
+    attempts: Mapped[int] = mapped_column(nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"OutboxEvent(id={self.id}, kind={self.kind!r}, sent={self.sent_at})"
+
 
 # Слот однозначно задаётся тройкой «вид встречи, начало». Без этого индекса
 # две одновременные заявки создали бы два сеанса на один слот, и подсчёт

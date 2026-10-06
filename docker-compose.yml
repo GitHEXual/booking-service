@@ -31,5 +31,20 @@ services:
       db:
         condition: service_healthy
 
+  # Фоновая задача: за несколько минут до встречи создаёт видеовстречу и
+  # рассылает гостям ссылки. Отдельный сервис, а не часть API: письма должны
+  # уходить, даже если кто-то перезапускает сервис.
+  worker:
+    build: .
+    command: ["python", "-m", "backend.worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://booking:booking@db:5432/booking
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/srv/backend
+
 volumes:
   pgdata:

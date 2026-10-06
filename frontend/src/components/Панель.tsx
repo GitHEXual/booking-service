@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   выйти,
+  задатьСсылку,
   моиВидыВстреч,
   моиЗаявки,
   создатьВидВстречи,
@@ -202,6 +203,7 @@ export function Панель({ эксперт }: { эксперт: Экспер�
               встреча={активная}
               заявки={заявки_встречи}
               пояс={мой_пояс()}
+              onГотово={обновить}
             />
           )}
         </main>
@@ -266,10 +268,12 @@ function ЗаявкиВстречи({
   встреча,
   заявки,
   пояс,
+  onГотово,
 }: {
   встреча: ВидВстречи;
   заявки: Заявка[];
   пояс: string;
+  onГотово: () => Promise<void>;
 }) {
   const [скопировано, setСкопировано] = useState(false);
   const ссылка = `${location.origin}${встреча.public_path}`;
@@ -339,7 +343,12 @@ function ЗаявкиВстречи({
                       <p className="строка__имя">{заявка.name}</p>
                       <p className="строка__почта">{заявка.email}</p>
                     </div>
-                    <p className="строка__время">{время(заявка.start_at, пояс)}</p>
+                    <div className="строка__право">
+                      <p className="строка__время">
+                        {время(заявка.start_at, пояс)}
+                      </p>
+                      <ПолеСсылки заявка={заявка} onГотово={onГотово} />
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -348,6 +357,80 @@ function ЗаявкиВстречи({
         )}
       </section>
     </>
+  );
+}
+
+/**
+ * Поле для ссылки на встречу.
+ *
+ * Ввод по умолчанию скрыт: ссылка нужна не на каждый день, а только когда
+ * Телемост не смог создать встречу сам.
+ */
+function ПолеСсылки({
+  заявка,
+  onГотово,
+}: {
+  заявка: Заявка;
+  onГотово: () => Promise<void>;
+}) {
+  const [открыто, setОткрыто] = useState(false);
+  const [значение, setЗначение] = useState("");
+  const [ошибка, setОшибка] = useState<string | null>(null);
+  const [занято, setЗанято] = useState(false);
+
+  async function сохранить(event: React.FormEvent) {
+    event.preventDefault();
+    setЗанято(true);
+    setОшибка(null);
+    try {
+      await задатьСсылку(заявка.id, значение);
+      setОткрыто(false);
+      setЗначение("");
+      await onГотово();
+    } catch (ошибка) {
+      setОшибка(
+        ошибка instanceof Error ? ошибка.message : "Не удалось сохранить ссылку",
+      );
+    } finally {
+      setЗанято(false);
+    }
+  }
+
+  if (!открыто) {
+    return (
+      <button
+        className="кнопка кнопка--тихая"
+        onClick={() => setОткрыто(true)}
+      >
+        Добавить ссылку
+      </button>
+    );
+  }
+
+  return (
+    <form className="группа" onSubmit={сохранить} style={{ gap: 8 }}>
+      <input
+        className="поле__ввод"
+        value={значение}
+        onChange={(e) => setЗначение(e.target.value)}
+        placeholder="https://..."
+        required
+        aria-label="Ссылка на встречу"
+      />
+      {ошибка && <p className="мелкий текст--ошибка">{ошибка}</p>}
+      <div className="пара">
+        <button
+          type="button"
+          className="кнопка кнопка--тихая"
+          onClick={() => setОткрыто(false)}
+        >
+          Отмена
+        </button>
+        <button className="кнопка кнопка--тихая" disabled={занято}>
+          {занято ? "Сохраняем" : "Сохранить"}
+        </button>
+      </div>
+    </form>
   );
 }
 

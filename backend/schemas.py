@@ -106,3 +106,17 @@ class ЗаявкаВход(BaseModel):
         if значение.tzinfo is None:
             raise ValueError("Время слота должно содержать часовой пояс")
         return значение.astimezone(UTC)
+
+
+class СсылкаВход(BaseModel):
+    """Ссылка на встречу, вписанная экспертом руками."""
+
+    join_url: str = Field(min_length=8, max_length=512)
+
+    @field_validator("join_url")
+    @classmethod
+    def _это_адрес(cls, значение: str) -> str:
+        адрес = значение.strip()
+        if not адрес.startswith(("https://", "http://")):
+            raise ValueError("Ссылка должна начинаться с https:// или http://")
+        return адрес

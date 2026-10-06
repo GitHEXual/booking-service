@@ -574,6 +574,31 @@ a {
   white-space: nowrap;
 }
 
+.строка__право {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* Поле внутри строки заявки: ввод без подписи, назначение видно по
+   плейсхолдеру и подписи для программ чтения с экрана. */
+.поле__ввод {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.поле__ввод:focus {
+  outline: none;
+  border-color: var(--text);
+}
+
 .день-заголовок {
   font-size: 0.875rem;
   font-weight: 500;

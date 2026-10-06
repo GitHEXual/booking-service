@@ -11,9 +11,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.db import get_session
-from backend.models import Booking, EventType, Schedule, Session, User
+from backend.models import (
+    Booking,
+    EventType,
+    OutboxEvent,
+    Schedule,
+    Session,
+    User,
+)
 from backend.routes.auth import require_expert
-from backend.schemas import ВидВстречиВход
+from backend.schemas import ВидВстречиВход, СсылкаВход
 
 router = APIRouter(prefix="/api/panel", tags=["панель"])
 
@@ -149,6 +156,66 @@ async def мои_заявки(
         }
         for заявка, сеанс in строки
     ]
+
+
+@router.post("/bookings/{booking_id}/join-url")
+async def задать_ссылку(
+    booking_id: int,
+    тело: СсылкаВход,
+    эксперт: User = Depends(require_expert),
+    сессия: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    """Вписать ссылку на встречу вручную.
+
+    Нужна, пока у приложения нет прав на API Телемоста, и как запасной путь:
+    Телемост может не ответить, а встреча уже должна состояться. Ссылка
+    попадает в то же письмо, что и созданная автоматически.
+    """
+    заявка = (
+        await сессия.execute(
+            select(Booking)
+            .where(Booking.id == booking_id, Booking.owner_id == эксперт.id)
+        )
+    ).scalar_one_or_none()
+
+    if заявка is None:
+        raise HTTPException(404, "Такой заявки нет")
+
+    сеанс = (
+        await сессия.execute(
+            select(Session).where(Session.id == заявка.session_id)
+        )
+    ).scalar_one()
+
+    сеанс.join_url = тело.join_url.strip()
+    сеанс.conference_status = "ready"
+    await сессия.flush()
+
+    # Письма могли уже уйти без ссылки: новые ставим в очередь заново.
+    for письмо in (
+        await сессия.execute(
+            select(OutboxEvent).where(
+                OutboxEvent.booking_id == заявка.id,
+                OutboxEvent.sent_at.is_(None),
+            )
+        )
+    ).scalars().all():
+        await сессия.delete(письмо)
+
+    сессия.add(
+        OutboxEvent(
+            kind="meeting_soon",
+            booking_id=заявка.id,
+            to_email=заявка.guest_email,
+            subject="Встреча начинается",
+            body=(
+                f"Здравствуйте!\n\n"
+                f"Встреча начинается. Подключиться:\n{сеанс.join_url}\n\n"
+                f"Служба записи на встречи"
+            ),
+        )
+    )
+    return {"join_url": сеанс.join_url}
 
 
 @router.get("/schedule")

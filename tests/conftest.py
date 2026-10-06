@@ -33,6 +33,7 @@ from backend.config import get_settings
 # Порядок очистки не важен: внешних ключей между этими таблицами нет, а
 # ограничения проверяются на вставке, а не на очистке.
 ТАБЛИЦЫ = (
+    "outbox_events",
     "bookings",
     "sessions",
     "event_types",
