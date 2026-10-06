@@ -204,10 +204,17 @@ class TestПодготовкаВстреч:
         assert встреча_скоро.conference_status == "ready"
         assert встреча_скоро.meeting_password
 
+        # Письма два: гостю со ссылкой и организатору, он ведёт встречу.
         письма = (await сессия.execute(select(OutboxEvent))).scalars().all()
-        assert len(письма) == 1
-        assert письма[0].kind == "meeting_soon"
-        assert "https://telemost.yandex.ru/j/1" in письма[0].body
+        assert len(письма) == 2
+        все_к = "".join(письмо.body for письмо in письма)
+        assert "https://telemost.yandex.ru/j/1" in все_к
+
+        гостю = [п for п in письма if п.to_email == "petr@example.com"]
+        эксперту = [п for п in письма if п.to_email == "expert@example.com"]
+        assert len(гостю) == 1, "гостю должно уйти письмо"
+        assert len(эксперту) == 1, "организатору тоже нужна ссылка"
+        assert "Пётр" in гостю[0].body
 
     async def test_ссылка_заданная_вручную_не_перетирается(
         self, встреча_скоро, сессия

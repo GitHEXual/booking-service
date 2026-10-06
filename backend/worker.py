@@ -129,12 +129,32 @@ async def _подготовить_сеанс(
                 body=mail.текст_письма(
                     имя=заявка.guest_name,
                     встреча=вид.name,
-                    эксперт=вид.owner.display_name if вид.owner else "эксперт",
+                    эксперт=вид.owner.display_name if вид.owner else "экспер��",
                     время=время,
                     ссылка=встреча.join_url,
                 ),
             )
         )
+
+    # Организатору письмо тоже: он ведёт встречу и без своей ссылки её не
+    # начать. Текст другой: гостя зовут подключиться, организатора оповещают.
+    почта_эксперта = await _почта_эксперта(сессия, сеанс)
+    if почта_эксперта:
+        сессия.add(
+            OutboxEvent(
+                kind="meeting_soon",
+                booking_id=заявки[0][0].id,
+                to_email=почта_эксперта,
+                subject=mail.тема_письма(заявки[0][1].name),
+                body=mail.текст_письма_эксперту(
+                    встреча=заявки[0][1].name,
+                    гости=len(заявки),
+                    время=время,
+                    ссылка=встреча.join_url,
+                ),
+            )
+        )
+
     журнал.info(
         "встреча создана, сеанс %s, гостей %s", сеанс.id, len(заявки)
     )
@@ -170,6 +190,16 @@ async def _создать_встречу(
         сеанс.conference_status = "failed"
         журнал.warning("встреча не создана, сеанс %s: %s", сеанс.id, ошибка)
         return None
+
+
+async def _почта_эксперта(сессия: AsyncSession, сеанс: Session) -> str | None:
+    """Почта эксперта для письма ему же."""
+    from backend.models import User
+
+    эксперт = (
+        await сессия.execute(select(User).where(User.id == сеанс.owner_id))
+    ).scalar_one_or_none()
+    return эксперт.email if эксперт else None
 
 
 async def _пояс_эксперта(сессия: AsyncSession, сеанс: Session) -> str:

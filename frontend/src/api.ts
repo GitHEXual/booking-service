@@ -135,20 +135,6 @@ export async function создатьВидВстречи(тело: Создан�
   return (await ответ.json()) as ВидВстречи;
 }
 
-/**
- * Вписать ссылку на встречу руками.
- *
- * Нужна, пока у приложения нет прав на API Телемоста: встреча всё равно должна
- * состояться, а ссылка может быть любой, где эксперт её уже создал.
- */
-export async function задатьСсылку(bookingId: number, joinUrl: string) {
-  await запрос(`/api/panel/bookings/${bookingId}/join-url`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ join_url: joinUrl }),
-  });
-}
-
 /** Что эксперт задаёт при создании вида встречи. */
 export interface СозданиеВида {
   name: string;
