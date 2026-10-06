@@ -14,7 +14,7 @@ import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from app.config import get_settings
+from backend.config import get_settings
 
 # Сколько живёт сессия без продления.
 SESSION_TTL_DAYS = 7

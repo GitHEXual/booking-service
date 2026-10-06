@@ -9,8 +9,8 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.crypto import EncryptedText
-from app.db import Base
+from backend.crypto import EncryptedText
+from backend.db import Base
 
 # Роли эксперта. Роль не назначается из интерфейса: она выдаётся при первом входе
 # и меняется вручную администратором.

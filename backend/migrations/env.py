@@ -12,9 +12,9 @@ from alembic import context
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app import models  # noqa: F401  импорт нужен, чтобы модели попали в metadata
-from app.config import get_settings
-from app.db import Base
+from backend import models  # noqa: F401  импорт нужен, чтобы модели попали в metadata
+from backend.config import get_settings
+from backend.db import Base
 
 config = context.config
 

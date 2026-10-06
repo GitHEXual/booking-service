@@ -15,9 +15,9 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir -e ".[dev]"
 
 COPY alembic.ini ./
-COPY app ./app
+COPY backend ./backend
 COPY tests ./tests
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

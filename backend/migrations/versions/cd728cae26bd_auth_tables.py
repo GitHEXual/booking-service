@@ -10,9 +10,9 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-import app.crypto
+import backend.crypto
 
-# Импорт `app.crypto` обязателен: без него `EncryptedText` в этой миграции
+# Импорт `backend.crypto` обязателен: без него `EncryptedText` в этой миграции
 # превратится в необъявленное имя и прогон упадёт. Автогенерация такой импорт
 # не добавляет, поэтому он дописан руками.
 
@@ -74,8 +74,8 @@ def upgrade() -> None:
         "oauth_tokens",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("access_token", app.crypto.EncryptedText(), nullable=False),
-        sa.Column("refresh_token", app.crypto.EncryptedText(), nullable=False),
+        sa.Column("access_token", backend.crypto.EncryptedText(), nullable=False),
+        sa.Column("refresh_token", backend.crypto.EncryptedText(), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("scope", sa.String(length=500), nullable=False),
         sa.Column(

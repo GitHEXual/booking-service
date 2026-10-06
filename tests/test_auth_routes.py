@@ -11,9 +11,9 @@ import httpx
 import pytest
 from sqlalchemy import select, text
 
-from app.models import AuthSession, OAuthToken, User
-from app.session_tokens import hash_token
-from app.yandex.client import USERINFO_URL
+from backend.models import AuthSession, OAuthToken, User
+from backend.session_tokens import hash_token
+from backend.yandex.client import USERINFO_URL
 
 ПРОФИЛЬ = {
     "id": "1000034427",
@@ -57,7 +57,7 @@ def подменяем_яндекса(приложение):
     `monkeypatch` по модулю: обработчик импортирует `get_http_client` при
     загрузке, и подмена исходного модуля до него уже не доходит.
     """
-    from app.yandex.client import get_http_client
+    from backend.yandex.client import get_http_client
 
     def установить(*, токен=None, профиль=None):
         транспорт = яндекс_отвечает(токен=токен, профиль=профиль)

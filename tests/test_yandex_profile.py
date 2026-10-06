@@ -8,7 +8,7 @@
 
 import pytest
 
-from app.yandex.profile import ProfileError, parse_profile
+from backend.yandex.profile import ProfileError, parse_profile
 
 # Ответ `/info` в том виде, в каком его возвращает Яндекс. Поля, которые мы
 # не используем, оставлены: они должны игнорироваться, а не мешать.

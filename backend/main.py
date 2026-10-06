@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 
-from app.routes.auth import router as auth_router
+from backend.routes.auth import router as auth_router
 
 
 def create_app() -> FastAPI:

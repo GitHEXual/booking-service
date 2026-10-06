@@ -20,23 +20,23 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import Settings, get_settings
-from app.cookies import (
+from backend.config import Settings, get_settings
+from backend.cookies import (
     СРОК_КУКИ_АВТОРИЗАЦИИ_СЕКУНД,
     временная_кука_авторизации,
     кука_сессии,
     пустая_кука_сессии,
 )
-from app.db import get_session
-from app.models import AuthSession, OAuthToken, User
-from app.session_tokens import (
+from backend.db import get_session
+from backend.models import AuthSession, OAuthToken, User
+from backend.session_tokens import (
     SESSION_TTL_DAYS,
     generate_token,
     hash_token,
     is_session_valid,
     new_session_expiry,
 )
-from app.yandex.client import (
+from backend.yandex.client import (
     YandexAuthDeniedError,
     YandexOAuthError,
     build_authorize_url,
@@ -47,7 +47,7 @@ from app.yandex.client import (
     new_state,
     verify_state,
 )
-from app.yandex.profile import ProfileError, parse_profile
+from backend.yandex.profile import ProfileError, parse_profile
 
 router = APIRouter(prefix="/auth", tags=["вход"])
 

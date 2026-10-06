@@ -31,7 +31,7 @@ requires = ["setuptools==84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["backend*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -53,4 +53,4 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "ASYNC"]
 # `Depends(...)` в аргументах обработчика это способ, которым FastAPI объявляет
 # зависимости. Проверка видит вызов функции в значении по умолчанию и ругается
 # на каждый обработчик, поэтому здесь её отключаем.
-"app/routes/*.py" = ["B008"]
+"backend/routes/*.py" = ["B008"]

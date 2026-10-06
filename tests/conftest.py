@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.config import get_settings
+from backend.config import get_settings
 
 ТЕСТОВАЯ_БАЗА = "booking_test"
 
@@ -133,9 +133,9 @@ def приложение(сессия):
     нужен обмен с Яндексем, надо добраться до того же приложения и подменить
     клиент у него, а не создавать второе.
     """
-    from app.db import get_session
-    from app.main import create_app
-    from app.yandex.client import get_http_client
+    from backend.db import get_session
+    from backend.main import create_app
+    from backend.yandex.client import get_http_client
 
     собранное = create_app()
     собранное.dependency_overrides[get_session] = lambda: сессия

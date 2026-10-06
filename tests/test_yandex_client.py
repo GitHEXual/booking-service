@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
-from app.yandex.client import (
+from backend.yandex.client import (
     YandexAuthDeniedError,
     YandexOAuthError,
     build_authorize_url,

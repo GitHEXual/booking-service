@@ -8,7 +8,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from app.session_tokens import (
+from backend.session_tokens import (
     SESSION_TTL_DAYS,
     generate_token,
     hash_token,

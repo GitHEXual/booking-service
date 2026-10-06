@@ -27,7 +27,7 @@ services:
       # Настройки pytest и ruff тоже из файла: иначе контейнер проверял бы
       # тесты по правилам из образа, собранного до правки настроек.
       - ./pyproject.toml:/srv/pyproject.toml
-      - ./app:/srv/app
+      - ./backend:/srv/backend
       - ./tests:/srv/tests
     depends_on:
       db:
