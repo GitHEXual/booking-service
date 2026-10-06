@@ -27,7 +27,6 @@ def правило(**замены) -> Правило:
         "increment": timedelta(minutes=30),
         "min_notice": timedelta(0),
         "horizon": timedelta(days=1),
-        "max_guests": 1,
     }
     return Правило(**значения | замены)
 
@@ -127,28 +126,18 @@ class TestЗанятость:
         # Гость должен видеть занятое время, иначе не поймёт, куда писать.
         занятый = момент(ПОНЕДЕЛЬНИК, 10)
         слоты = build_slots(
-            правило(taken={занятый: 1}), now=момент(ПОНЕДЕЛЬНИК, 8)
+            правило(taken=frozenset({занятый})), now=момент(ПОНЕДЕЛЬНИК, 8)
         )
         найденный = [слот for слот in слоты if слот.start_at == занятый]
         assert найденный, "занятый слот должен быть в сетке"
+        assert найденный[0].is_taken is True
         assert найденный[0].can_request is False
 
-    def test_остаток_считается_по_занятым(self):
-        занятый = момент(ПОНЕДЕЛЬНИК, 10)
-        правило_на_двоих = правило(max_guests=2, taken={занятый: 1})
-        слоты = build_slots(правило_на_двоих, now=момент(ПОНЕДЕЛЬНИК, 8))
-        нужный = next(слот for слот in слоты if слот.start_at == занятый)
-        assert нужный.remaining == 1
-        assert нужный.can_request is True
-
-    def test_слот_лишён_места_недоступен(self):
-        занятый = момент(ПОНЕДЕЛЬНИК, 10)
-        слоты = build_slots(
-            правило(max_guests=1, taken={занятый: 1}), now=момент(ПОНЕДЕЛЬНИК, 8)
-        )
-        нужный = next(слот for слот in слоты if слот.start_at == занятый)
-        assert нужный.remaining == 0
-        assert нужный.can_request is False
+    def test_свободный_слот_доступен(self):
+        слоты = build_slots(правило(), now=момент(ПОНЕДЕЛЬНИК, 8))
+        первый = слоты[0]
+        assert первый.is_taken is False
+        assert первый.can_request is True
 
     def test_закрытый_слот_не_принимает_заявки(self):
         # Состав закреплён: время в сетке есть, но записаться на него нельзя.
@@ -157,18 +146,16 @@ class TestЗанятость:
             правило(closed=frozenset({закрытый})), now=момент(ПОНЕДЕЛЬНИК, 8)
         )
         нужный = next(слот for слот in слоты if слот.start_at == закрытый)
-        assert нужный.is_open is False
+        assert нужный.is_taken is True
         assert нужный.can_request is False
 
-    def test_остаток_не_уходит_в_минус(self):
-        # Данные могли разъехаться, но показывать отрицательное число мест
-        # гостю нельзя.
+    def test_один_гость_не_влияет_на_другие_слоты(self):
+        # Правило «один слот это один гость» не превращает всю сетку в занятую.
         занятый = момент(ПОНЕДЕЛЬНИК, 10)
         слоты = build_slots(
-            правило(max_guests=1, taken={занятый: 3}), now=момент(ПОНЕДЕЛЬНИК, 8)
+            правило(taken=frozenset({занятый})), now=момент(ПОНЕДЕЛЬНИК, 8)
         )
-        нужный = next(слот for слот in слоты if слот.start_at == занятый)
-        assert нужный.remaining == 0
+        assert sum(1 for слот in слоты if слот.can_request) == len(слоты) - 1
 
 
 class TestПоискСлота:

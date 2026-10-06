@@ -48,7 +48,6 @@ async def эксперт(сессия) -> User:
             slug=SLUG,
             duration_minutes=30,
             time_increment_minutes=30,
-            max_guests=1,
             min_notice_hours=0,
             horizon_days=30,
         )
@@ -215,18 +214,46 @@ class TestЗащитаОтПовторов:
         )
         assert второй.status_code == 409
 
-    async def test_занятый_слот_даёт_409(
+    async def test_второй_гость_на_тот_же_слот_отклоняется(
         self, клиент_приложения, эксперт, сессия
     ):
-        # Другой гость занял единственное место: инвариант И1.
+        # Главное правило MVP: один слот это один гость. Второй получает 409.
         начало = await будущий_слот(клиент_приложения)
-        await клиент_приложения.post(
+        первый = await клиент_приложения.post(
             f"/api/{ЛОГИН}/{SLUG}/bookings", json=заявка(начало, почта="first@mail.ru")
         )
-        ответ = await клиент_приложения.post(
+        assert первый.status_code == 201
+
+        второй = await клиент_приложения.post(
             f"/api/{ЛОГИН}/{SLUG}/bookings", json=заявка(начало, почта="second@mail.ru")
         )
-        assert ответ.status_code == 409
+        assert второй.status_code == 409
+        assert "записан другой" in второй.json()["detail"]
+
+        строки = (await сессия.execute(select(Booking))).scalars().all()
+        assert len(строки) == 1, "второй заявки в базе быть не должно"
+
+    async def test_разные_слоты_занимаются_разными_гостями(
+        self, клиент_приложения, эксперт
+    ):
+        # Правило относится к одному слоту, а не ко всей встрече.
+        первый = await будущий_слот(клиент_приложения)
+        ответ = await клиент_приложения.post(
+            f"/api/{ЛОГИН}/{SLUG}/bookings", json=заявка(первый, почта="a@mail.ru")
+        )
+        assert ответ.status_code == 201
+
+        сетка = (await клиент_приложения.get(f"/api/{ЛОГИН}/{SLUG}/slots")).json()
+        свободный = next(
+            слот["start_at"]
+            for слот in сетка["slots"]
+            if слот["can_request"] and слот["start_at"] != первый
+        )
+        второй = await клиент_приложения.post(
+            f"/api/{ЛОГИН}/{SLUG}/bookings",
+            json=заявка(свободный, почта="b@mail.ru"),
+        )
+        assert второй.status_code == 201
 
     async def test_занятый_слот_исчезает_из_доступных(
         self, клиент_приложения, эксперт
@@ -238,7 +265,7 @@ class TestЗащитаОтПовторов:
         нужный = next(
             слот for слот in ответ["slots"] if слот["start_at"] == начало
         )
-        assert нужный["remaining"] == 0
+        assert нужный["is_taken"] is True
         assert нужный["can_request"] is False
 
 
@@ -334,7 +361,6 @@ class TestПанельЭксперта:
                 "name": "Код-ревью",
                 "slug": "kod-review",
                 "duration_minutes": 60,
-                "max_guests": 1,
                 "schedule": {
                     "weekdays": [2, 4],
                     "start_time": "14:00",

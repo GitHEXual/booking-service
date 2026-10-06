@@ -565,6 +565,21 @@ a {
   text-align: right;
 }
 
+/* Время заявки стоит крупнее имени: эксперт открывает панель, чтобы узнать
+   «кто и когда», и находит это по времени. */
+.строка__время {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.день-заголовок {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 .слоты {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));

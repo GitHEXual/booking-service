@@ -21,7 +21,6 @@ export interface ВидВстречи {
   slug: string;
   description: string | null;
   duration_minutes: number;
-  max_guests: number;
   active: boolean;
   /** Путь публичной ссылки, который отдаёт этот гостю. */
   public_path: string;
@@ -45,7 +44,6 @@ export interface СтраницаВстречи {
   name: string;
   description: string | null;
   duration_minutes: number;
-  max_guests: number;
   owner_name: string;
   timezone: string;
 }
@@ -54,8 +52,7 @@ export interface СтраницаВстречи {
 export interface Слот {
   start_at: string;
   end_at: string;
-  remaining: number;
-  is_open: boolean;
+  is_taken: boolean;
   can_request: boolean;
 }
 
@@ -144,7 +141,6 @@ export interface СозданиеВида {
   slug: string;
   description?: string;
   duration_minutes: number;
-  max_guests: number;
   schedule: {
     weekdays: number[];
     start_time: string;

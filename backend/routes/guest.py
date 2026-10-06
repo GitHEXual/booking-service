@@ -2,14 +2,20 @@
 
 Гость здесь не авторизуется. Он открывает ссылку эксперта, видит свободное
 время и отправляет заявку с именем и почтой.
+
+Правило простое: один слот это один гость. Проверяет его не код, а
+уникальный индекс `uq_booking_active_session` на таблице заявок, поэтому две
+одновременные заявки на одно время не пройдут обе, как бы быстро они ни
+пришли.
 """
 
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.config import get_settings
 from backend.crypto import слепой_индекс
@@ -21,17 +27,7 @@ from backend.slots import МАКСИМУМ_ДНЕЙ_В_ЗАПРОСЕ, Прав�
 router = APIRouter(prefix="/api", tags=["гость"])
 
 
-def _время(значение: str) -> tuple[int, int, int]:
-    """Строка `ЧЧ:ММ[:СС]` в тройку чисел."""
-    части = [int(часть) for часть in значение.split(":")]
-    while len(части) < 3:
-        части.append(0)
-    return части[0], части[1], части[2]
-
-
-def _правило(
-    вид: EventType, занятые: dict[datetime, int], закрытые: frozenset[datetime]
-) -> Правило:
+def _правило(вид: EventType, занятые: frozenset[datetime]) -> Правило:
     """Собрать правило расчёта из вида встречи и его расписания."""
     расписание = вид.schedule
     return Правило(
@@ -43,23 +39,21 @@ def _правило(
         increment=timedelta(minutes=вид.time_increment_minutes),
         min_notice=timedelta(hours=вид.min_notice_hours),
         horizon=timedelta(days=вид.horizon_days),
-        max_guests=вид.max_guests,
         taken=занятые,
-        closed=закрытые,
     )
 
 
-async def _занятость(
+async def _занятые(
     сессия: AsyncSession, вид: EventType, от: datetime, до: datetime
-) -> tuple[dict[datetime, int], frozenset[datetime]]:
-    """Сколько мест занято в слотах и какие слоты закрыты.
+) -> frozenset[datetime]:
+    """Начала слотов, на которые кто-то записан.
 
-    Место занимают только заявки в статусах `pending` и `confirmed`, поэтому
-    исключённый или протухший гость место освобождает.
+    Место держат только заявки в статусах `pending` и `confirmed`, поэтому
+    отменённая или исключённая заявка освобождает время снова.
     """
-    строки = (
+    занятые = (
         await сессия.execute(
-            select(Session.start_at, func.count(Booking.id))
+            select(Session.start_at)
             .join(Booking, Booking.session_id == Session.id)
             .where(
                 Session.event_type_id == вид.id,
@@ -67,34 +61,26 @@ async def _занятость(
                 Session.start_at < до,
                 Booking.status.in_(Booking.СТАТУСЫ_С_МЕСТОМ),
             )
-            .group_by(Session.start_at)
         )
-    ).all()
-    занятые = {начало: количество for начало, количество in строки}
+    ).scalars().all()
 
-    закрытые = frozenset(
-        (
-            await сессия.execute(
-                select(Session.start_at).where(
-                    Session.event_type_id == вид.id,
-                    Session.start_at >= от,
-                    Session.start_at < до,
-                    Session.confirmed_at.is_not(None),
-                )
+    # Состав закреплён: время в сетке остаётся, но записаться на него нельзя.
+    закрытые = (
+        await сессия.execute(
+            select(Session.start_at).where(
+                Session.event_type_id == вид.id,
+                Session.start_at >= от,
+                Session.start_at < до,
+                Session.confirmed_at.is_not(None),
             )
         )
-        .scalars()
-        .all()
-    )
-    return занятые, закрытые
+    ).scalars().all()
+
+    return frozenset(занятые) | frozenset(закрытые)
 
 
-async def _вид_по_ссылке(
-    сессия: AsyncSession, owner: str, slug: str
-) -> EventType:
+async def _вид_по_ссылке(сессия: AsyncSession, owner: str, slug: str) -> EventType:
     """Найти вид встречи по публичной ссылке `/api/{owner}/{slug}`."""
-    from sqlalchemy.orm import selectinload
-
     вид = (
         await сессия.execute(
             select(EventType)
@@ -109,27 +95,6 @@ async def _вид_по_ссылке(
     return вид
 
 
-def _ответ_сетки(слоты, пояс: str) -> dict[str, object]:
-    """Сетка в понятном гостю виде.
-
-    Время отдаётся в UTC вместе с поясом: перевод на пояс гостя делает
-    интерфейс, см. `docs/adr/0010-chasovye-ponya.md`.
-    """
-    return {
-        "timezone": пояс,
-        "slots": [
-            {
-                "start_at": слот.start_at.isoformat(),
-                "end_at": слот.end_at.isoformat(),
-                "remaining": слот.remaining,
-                "is_open": слот.is_open,
-                "can_request": слот.can_request,
-            }
-            for слот in слоты
-        ],
-    }
-
-
 @router.get("/{owner}/{slug}")
 async def о_виде_встречи(
     owner: str,
@@ -142,7 +107,6 @@ async def о_виде_встречи(
         "name": вид.name,
         "description": вид.description,
         "duration_minutes": вид.duration_minutes,
-        "max_guests": вид.max_guests,
         "owner_name": вид.owner.display_name,
         "timezone": вид.owner.timezone,
     }
@@ -161,13 +125,23 @@ async def слоты_вида(
     """
     вид = await _вид_по_ссылке(сессия, owner, slug)
     now = datetime.now(UTC)
-    занятые, закрытые = await _занятость(
-        сессия, вид, now, now + timedelta(days=вид.horizon_days)
-    )
-    сетка = build_slots(
-        _правило(вид, занятые, закрытые), now=now
-    )
-    return _ответ_сетки(сетка[:дней * 24], вид.owner.timezone)
+    занятые = await _занятые(сессия, вид, now, now + timedelta(days=вид.horizon_days))
+    сетка = build_slots(_правило(вид, занятые), now=now)
+
+    return {
+        "timezone": вид.owner.timezone,
+        # Время отдаётся в UTC вместе с поясом: перевод на пояс гостя делает
+        # интерфейс, см. `docs/adr/0010-chasovye-ponya.md`.
+        "slots": [
+            {
+                "start_at": слот.start_at.isoformat(),
+                "end_at": слот.end_at.isoformat(),
+                "is_taken": слот.is_taken,
+                "can_request": слот.can_request,
+            }
+            for слот in сетка[:дней * 24]
+        ],
+    }
 
 
 @router.post("/{owner}/{slug}/bookings", status_code=201)
@@ -182,19 +156,16 @@ async def отправить_заявку(
     вид = await _вид_по_ссылке(сессия, owner, slug)
     now = datetime.now(UTC)
 
-    занятые, закрытые = await _занятость(
-        сессия, вид, now, now + timedelta(days=вид.horizon_days)
-    )
-    правило = _правило(вид, занятые, закрытые)
-    слот = find_slot(правило, данные.start_at, now=now)
+    занятые = await _занятые(сессия, вид, now, now + timedelta(days=вид.horizon_days))
+    слот = find_slot(_правило(вид, занятые), данные.start_at, now=now)
 
     if слот is None:
         raise HTTPException(422, "Это время больше не доступно")
-    if not слот.can_request:
-        raise HTTPException(409, "На это время все места заняты")
+    if слот.is_taken:
+        raise HTTPException(409, "На это время уже записан другой гость")
 
-    # Сеанс появляется вместе с первой заявкой: слота в базе нет, и хранить
-    # нечего, пока на него никто не записался.
+    # Сеанс появляется вместе с первой заявкой: самого слота в базе нет, и
+    # хранить нечего, пока на него никто не записался.
     сеанс = (
         await сессия.execute(
             select(Session).where(
@@ -228,12 +199,11 @@ async def отправить_заявку(
     try:
         await сессия.flush()
     except IntegrityError as ошибка:
-        # Частичный уникальный индекс ловит повторную отправку формы, когда
-        # гость не увидел, что заявка уже создана.
+        # Сюда попадают две ситуации: время заняли, пока страница была
+        # открыта, и гость отправил форму дважды подряд. Обе означают одно:
+        # заявка на это время уже есть.
         await сессия.rollback()
-        raise HTTPException(
-            409, "Заявка на это время уже есть"
-        ) from ошибка
+        raise HTTPException(409, "На это время уже есть заявка") from ошибка
 
     return {
         "id": заявка.id,

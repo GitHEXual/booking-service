@@ -39,15 +39,58 @@ function мой_пояс(): string {
 }
 
 /** Время заявки. Пояс задаётся явно: без него результат зависит от машины. */
-function когда(начало: string, пояс: string): string {
+function время(начало: string, пояс: string): string {
   return new Intl.DateTimeFormat("ru-RU", {
-    weekday: "short",
-    day: "numeric",
-    month: "long",
     hour: "2-digit",
     minute: "2-digit",
     timeZone: пояс,
   }).format(new Date(начало));
+}
+
+/** Заголовок дня для группы заявок. */
+function деньЗаголовком(начало: string, пояс: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: пояс,
+  }).format(new Date(начало));
+}
+
+/**
+ * Заявки, собранные по дням.
+ *
+ * Список без группировки читается тяжело: записи за вторую неделю стоят в общей куче
+ * со старыми, и найти нужную невозможно. По дням видно, что в какой день ждёт.
+ */
+function группыПоДням(заявки: Заявка[], пояс: string) {
+  const группы = new Map<string, Заявка[]>();
+  const ключФормат = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: пояс,
+  });
+
+  for (const заявка of заявки) {
+    const ключ = ключФормат.format(new Date(заявка.start_at));
+    const список = группы.get(ключ);
+    if (список) {
+      список.push(заявка);
+    } else {
+      группы.set(ключ, [заявка]);
+    }
+  }
+
+  return [...группы].map(([ключ, список]) => ({
+    ключ,
+    заголовок: капитализировать(деньЗаголовком(список[0].start_at, пояс)),
+    заявки: список,
+  }));
+}
+
+function капитализировать(текст: string): string {
+  return текст.charAt(0).toUpperCase() + текст.slice(1);
 }
 
 export function Панель({ эксперт }: { эксперт: Эксперт }) {
@@ -261,10 +304,6 @@ function ЗаявкиВстречи({
             <dt className="мелкий текст--приглушенный">Длительность</dt>
             <dd>{встреча.duration_minutes} мин</dd>
           </div>
-          <div className="строка">
-            <dt className="мелкий текст--приглушенный">Мест в слоте</dt>
-            <dd>{встреча.max_guests}</dd>
-          </div>
         </dl>
 
         <div>
@@ -277,24 +316,35 @@ function ЗаявкиВстречи({
       <div className="разделитель" />
 
       <section className="группа">
-        <h2 className="подзаголовок">Заявки</h2>
+        <div className="календарь__шапка">
+          <h2 className="подзаголовок">Записались</h2>
+          {заявки.length > 0 && <span className="счётчик">{заявки.length}</span>}
+        </div>
 
         {заявки.length === 0 ? (
-          <p className="текст текст--приглушенный">
-            Пока никто не записался. Отправьте ссылку гостям.
-          </p>
+          <div className="пусто">
+            <p className="текст">Пока никто не записался</p>
+            <p className="мелкий текст--приглушенный">
+              Отправьте ссылку гостям, и заявки появятся здесь.
+            </p>
+          </div>
         ) : (
-          <ul>
-            {заявки.map((заявка) => (
-              <li className="строка" key={заявка.id}>
-                <div>
-                  <p className="строка__имя">{заявка.name}</p>
-                  <p className="строка__почта">{заявка.email}</p>
-                </div>
-                <p className="строка__когда">{когда(заявка.start_at, пояс)}</p>
-              </li>
-            ))}
-          </ul>
+          группыПоДням(заявки, пояс).map((день) => (
+            <div className="группа" key={день.ключ}>
+              <h3 className="день-заголовок">{день.заголовок}</h3>
+              <ul>
+                {день.заявки.map((заявка) => (
+                  <li className="строка" key={заявка.id}>
+                    <div>
+                      <p className="строка__имя">{заявка.name}</p>
+                      <p className="строка__почта">{заявка.email}</p>
+                    </div>
+                    <p className="строка__время">{время(заявка.start_at, пояс)}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
         )}
       </section>
     </>
@@ -334,7 +384,6 @@ function НоваяВстреча({
         name: имя,
         slug: адрес,
         duration_minutes: длительность,
-        max_guests: 1,
         schedule: { weekdays: дни, start_time: начало, end_time: конец },
       });
       await onГотово();

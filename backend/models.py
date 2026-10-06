@@ -163,8 +163,6 @@ class EventType(Base):
     description: Mapped[str | None] = mapped_column(String(500))
 
     duration_minutes: Mapped[int] = mapped_column(nullable=False)
-    # Сколько гостей помещается в один слот. Значение 1 даёт одиночную запись.
-    max_guests: Mapped[int] = mapped_column(nullable=False, default=1)
     time_increment_minutes: Mapped[int] = mapped_column(nullable=False, default=30)
     # За сколько часов минимум можно записаться и на сколько дней вперёд открыта
     # запись. Оба ограничения проверяются при расчёте сетки.
@@ -285,15 +283,15 @@ Index(
     unique=True,
 )
 
-# Один гость не занимает два места в одном слоте и не отправляет одну заявку
-# дважды. Индекс частичный: освобождённые заявки (`removed`, `expired`,
-# `cancelled`) место не занимают, поэтому повторная заявка после исключения
-# должна быть возможна.
+# Один слот это один гость. Правило держит сам индекс, а не код обработчика:
+# две одновременные заявки на последнее место не могут обе пройти проверку,
+# потому что вторая упрётся в нарушение уникальности.
+#
+# Индекс частичный: освобождённая заявка (`removed`, `expired`, `cancelled`)
+# место не держит, поэтому после отмены это время снова свободно.
 Index(
-    "uq_booking_guest_slot",
-    Booking.event_type_id,
+    "uq_booking_active_session",
     Booking.session_id,
-    Booking.guest_email_bidx,
     unique=True,
     postgresql_where=Booking.status.in_(("pending", "confirmed")),
 )

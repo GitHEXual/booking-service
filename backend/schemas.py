@@ -51,8 +51,6 @@ class ВидВстречиВход(BaseModel):
 
     duration_minutes: int = Field(ge=5, le=480)
     time_increment_minutes: int = Field(default=30, ge=5, le=480)
-    # Значение 1 даёт обычную одиночную запись.
-    max_guests: int = Field(default=1, ge=1, le=500)
     min_notice_hours: int = Field(default=0, ge=0, le=720)
     horizon_days: int = Field(default=30, ge=1, le=90)
 

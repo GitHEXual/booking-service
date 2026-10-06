@@ -9,7 +9,7 @@
 летнее время, поэтому сетка не разъезжается два раза в год.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -36,10 +36,9 @@ class Правило:
     increment: timedelta
     min_notice: timedelta
     horizon: timedelta
-    max_guests: int = 1
 
-    taken: dict[datetime, int] = field(default_factory=dict)
-    """Сколько мест занято в каждом слоте. Считает обработчик запросом в базу."""
+    taken: frozenset[datetime] = frozenset()
+    """Начала слотов, на которые кто-то записан. Считает обработчик."""
 
     closed: frozenset[datetime] = frozenset()
     """Слоты, куда заявки больше не принимаются: состав закреплён или встреча
@@ -52,17 +51,11 @@ class Слот:
 
     start_at: datetime
     end_at: datetime
-    max_guests: int
-    taken: int
-    is_open: bool
-
-    @property
-    def remaining(self) -> int:
-        return max(0, self.max_guests - self.taken)
+    is_taken: bool
 
     @property
     def can_request(self) -> bool:
-        return self.is_open and self.remaining > 0
+        return not self.is_taken
 
 
 def build_slots(правило: Правило, *, now: datetime | None = None) -> list[Слот]:
@@ -116,9 +109,8 @@ def _слоты_за_день(
                 Слот(
                     start_at=начало_utc,
                     end_at=(начало + правило.duration).astimezone(UTC),
-                    max_guests=правило.max_guests,
-                    taken=правило.taken.get(начало_utc, 0),
-                    is_open=начало_utc not in правило.closed,
+                    is_taken=начало_utc in правило.taken
+                    or начало_utc in правило.closed,
                 )
             )
         начало += правило.increment

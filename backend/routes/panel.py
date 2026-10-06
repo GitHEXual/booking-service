@@ -40,7 +40,6 @@ async def мои_виды(
             "slug": вид.slug,
             "description": вид.description,
             "duration_minutes": вид.duration_minutes,
-            "max_guests": вид.max_guests,
             "active": вид.active,
             "public_path": f"/u/{эксперт.login}/{вид.slug}",
         }
@@ -94,7 +93,6 @@ async def создать_вид(
         description=данные.description,
         duration_minutes=данные.duration_minutes,
         time_increment_minutes=данные.time_increment_minutes,
-        max_guests=данные.max_guests,
         min_notice_hours=данные.min_notice_hours,
         horizon_days=данные.horizon_days,
     )
