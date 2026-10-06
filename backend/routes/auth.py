@@ -48,7 +48,8 @@ from backend.yandex.client import (
     new_state,
     verify_state,
 )
-from backend.yandex.profile import ProfileError, parse_profile
+from backend.yandex.client import OAuthToken as ТокенЯндекса
+from backend.yandex.profile import ProfileError, YandexProfile, parse_profile
 
 router = APIRouter(prefix="/auth", tags=["вход"])
 
@@ -154,6 +155,52 @@ def _прочитать_временные(настройки: Settings, кук�
     return ВременныеДанные(state=данные["s"], code_verifier=данные["v"])
 
 
+def _ошибка_от_яндекса(error: str) -> HTTPException:
+    """Что ответить на отказ Яндекса.
+
+    Текст выбираем по коду, а не один на все случаи. Иначе отказ человека и
+    неверная настройка приложения выглядят одинаково, и человек зря ищет у
+    себя проблему, которой нет.
+    """
+    if error == НЕТ_ТАКИХ_ПРАВ:
+        return HTTPException(
+            500,
+            "У приложения нет запрошенных прав доступа. "
+            "Их нужно добавить в настройках приложения Яндекс OAuth.",
+        )
+    return HTTPException(400, "Вы не разрешили приложению доступ. Попробуйте ещё раз.")
+
+
+async def _профиль_по_коду(
+    http: httpx.AsyncClient, настройки: Settings, *, код: str, верификатор: str
+) -> tuple[YandexProfile, ТокенЯндекса]:
+    """Обменять код на токен и прочитать профиль.
+
+    Ошибки Яндекса переводятся в ответы сервиса: отказ человека это 400, сбой на
+    стороне Яндекса это 502. Второе важно различать, потому что 400 читается
+    как «человек что-то сделал не так» и чинить будут его.
+    """
+    try:
+        токен = await exchange_code(
+            http,
+            client_id=настройки.yandex_client_id,
+            client_secret=настройки.yandex_client_secret,
+            redirect_uri=настройки.yandex_redirect_uri,
+            code=код,
+            code_verifier=верификатор,
+        )
+        ответ_яндекса = await fetch_profile(http, access_token=токен.access_token)
+    except YandexAuthDeniedError as ошибка:
+        raise HTTPException(400, str(ошибка)) from ошибка
+    except YandexOAuthError as ошибка:
+        raise HTTPException(502, str(ошибка)) from ошибка
+
+    try:
+        return parse_profile(ответ_яндекса), токен
+    except ProfileError as ошибка:
+        raise HTTPException(502, str(ошибка)) from ошибка
+
+
 @router.get("/yandex/callback")
 async def завершить_вход(
     response: Response,
@@ -167,16 +214,7 @@ async def завершить_вход(
 ) -> Response:
     """Принять код от Яндекса и выдать сессию."""
     if error:
-        # Текст ошибки выбираем по коду, а не один на все случаи. Иначе отказ
-        # человека и неверная настройка приложения выглядят одинаково, и
-        # человек зря ищет у себя проблему, которой нет.
-        if error == НЕТ_ТАКИХ_ПРАВ:
-            raise HTTPException(
-                500,
-                "У приложения нет запрошенных прав доступа. "
-                "Их нужно добавить в настройках приложения Яндекс OAuth.",
-            )
-        raise HTTPException(400, "Вы не разрешили приложению доступ. Попробуйте ещё раз.")
+        raise _ошибка_от_яндекса(error)
 
     if not code:
         raise HTTPException(400, "Яндекс не вернул код подтверждения")
@@ -188,32 +226,18 @@ async def завершить_вход(
     if not verify_state(временные.state, state):
         raise HTTPException(403, "Ответ авторизации не совпадает с запросом")
 
-    try:
-        токен = await exchange_code(
-            http,
-            client_id=настройки.yandex_client_id,
-            client_secret=настройки.yandex_client_secret,
-            redirect_uri=настройки.yandex_redirect_uri,
-            code=code,
-            code_verifier=временные.code_verifier,
-        )
-        профиль_яндекса = await fetch_profile(http, access_token=токен.access_token)
-    except YandexAuthDeniedError as ошибка:
-        raise HTTPException(400, str(ошибка)) from ошибка
-    except YandexOAuthError as ошибка:
-        raise HTTPException(502, str(ошибка)) from ошибка
-
-    try:
-        профиль = parse_profile(профиль_яндекса)
-    except ProfileError as ошибка:
-        raise HTTPException(502, str(ошибка)) from ошибка
-
+    профиль, токен = await _профиль_по_коду(
+        http,
+        настройки,
+        код=code,
+        верификатор=временные.code_verifier,
+    )
     эксперт = await _записать_эксперта(сессия, профиль, токен)
     await сессия.flush()
 
-    await сессия.execute(
-        delete(AuthSession).where(AuthSession.user_id == эксперт.id)
-    )
+    # Прежние сессии не трогаем: у эксперта может быть несколько входов,
+    # например с телефона и с компьютера, см. `docs/ontology.md`. Выход
+    # удаляет только свою сессию, поэтому старые устройства работают дальше.
     token = generate_token()
     сессия.add(
         AuthSession(
@@ -234,7 +258,7 @@ async def завершить_вход(
 
 
 async def _записать_эксперта(
-    сессия: AsyncSession, профиль, токен
+    сессия: AsyncSession, профиль: YandexProfile, токен: ТокенЯндекса
 ) -> User:
     """Найти или создать эксперта и обновить его токен."""
     эксперт = (

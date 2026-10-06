@@ -78,6 +78,67 @@ cp .env.example .env
 Отправка через SMTP проверена: подключение к `smtp.yandex.ru:465` и авторизация
 с паролем приложения работают.
 
+## Что нужно поставить
+
+- Python 3.14
+- Node.js 22 или новее
+- Docker с Docker Compose
+
+## Запуск
+
+Сервис и база:
+
+```bash
+docker compose up -d --build
+```
+
+Интерфейс, в отдельном терминале:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Панель открывается на http://localhost:5173. Запросы к `/api` и `/auth`
+Vite отправляет сервису на порт 8000, поэтому второй порт в адресах не
+участвует.
+
+Миграции накатываются отдельно, перед первым входом:
+
+```bash
+docker compose exec api alembic upgrade head
+```
+
+### Что где лежит
+
+```
+backend/               сервис: FastAPI, SQLAlchemy, Alembic
+  routes/auth.py       вход, выход, кто вошёл
+  yandex/              обмен с Яндексом: код, токен, профиль
+  models.py            таблицы входа эксперта
+backend/migrations/    миграции Alembic
+frontend/              интерфейс: Vite, React 19, TypeScript
+  src/api.ts           обращения к сервису и типы ответов
+  src/components/      экраны
+docs/adr/              архитектурные решения
+docs/pdr/              продуктовое решение
+docs/ontology.md       доменная модель и инварианты
+tests/                 тесты pytest
+```
+
+## Тесты
+
+```bash
+docker compose run --rm api pytest
+docker compose run --rm api ruff check .
+cd frontend && npm run typecheck
+```
+
+Тесты идут против настоящего PostgreSQL из docker compose, а не против SQLite:
+в моделях есть то, что на SQLite не заработает, и подменять хранилище значило бы
+проверять не то, что пойдёт в бой.
+
 ## Порядок работы
 
 1. Каркас проекта: `pyproject.toml`, Docker Compose с PostgreSQL, настройки,
