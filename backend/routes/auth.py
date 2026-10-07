@@ -73,7 +73,7 @@ def адрес_после_входа(настройки: Settings) -> str:
 
 async def require_expert(
     session: str | None = Cookie(default=None),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> User:
     """Эксперт по куке сессии.
 
@@ -208,7 +208,7 @@ async def завершить_вход(
     error: str | None = None,
     state: str | None = None,
     yandex_auth: str | None = Cookie(default=None),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
     настройки: Settings = Depends(get_settings),
     http: httpx.AsyncClient = Depends(get_http_client),
 ) -> Response:
@@ -308,7 +308,7 @@ async def _записать_эксперта(
 async def выйти(
     response: Response,
     session: str | None = Cookie(default=None),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> Response:
     """Отозвать сессию.
 

@@ -406,6 +406,27 @@ class TestПанельЭксперта:
         виды = ответ.json()
         assert виды[0]["public_path"] == f"/u/{ЛОГИН}/{SLUG}"
 
+    async def test_встречу_можно_удалить(self, клиент_приложения, эксперт, сессия):
+        # Вместе с видом встречи уходят его заявки и сеансы, иначе остались бы
+        # висеть заявки на несуществующую встречу.
+        начало = await будущий_слот(клиент_приложения)
+        await клиент_приложения.post(
+            f"/api/{ЛОГИН}/{SLUG}/bookings", json=заявка(начало)
+        )
+        вид_id = (await клиент_приложения.get("/api/panel/event-types")).json()[0]["id"]
+
+        ответ = await клиент_приложения.delete(f"/api/panel/event-types/{вид_id}")
+        assert ответ.status_code == 204
+
+        assert (await клиент_приложения.get("/api/panel/event-types")).json() == []
+        assert (await клиент_приложения.get("/api/panel/bookings")).json() == []
+        assert (await сессия.execute(select(Booking))).scalars().all() == []
+
+    async def test_несуществующей_встречи_нет(self, клиент_приложения, эксперт):
+        assert (
+            await клиент_приложения.delete("/api/panel/event-types/999")
+        ).status_code == 404
+
     async def test_новый_вид_встречи_создаётся(self, клиент_приложения, эксперт):
         ответ = await клиент_приложения.post(
             "/api/panel/event-types",

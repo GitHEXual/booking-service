@@ -99,7 +99,7 @@ async def _вид_по_ссылке(сессия: AsyncSession, owner: str, slug
 async def о_виде_встречи(
     owner: str,
     slug: str,
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> dict[str, object]:
     """Вид встречи для страницы гостя."""
     вид = await _вид_по_ссылке(сессия, owner, slug)
@@ -117,7 +117,7 @@ async def слоты_вида(
     owner: str,
     slug: str,
     дней: int = Query(default=7, ge=1, le=МАКСИМУМ_ДНЕЙ_В_ЗАПРОСЕ),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> dict[str, object]:
     """Сетка слотов на ближайшие дни.
 
@@ -149,7 +149,7 @@ async def отправить_заявку(
     owner: str,
     slug: str,
     данные: ЗаявкаВход,
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
     настройки=Depends(get_settings),
 ) -> dict[str, object]:
     """Принять заявку гостя."""

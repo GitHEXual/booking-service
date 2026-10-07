@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/panel", tags=["панель"])
 @router.get("/event-types")
 async def мои_виды(
     эксперт: User = Depends(require_expert),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> list[dict[str, object]]:
     """Виды встреч эксперта вместе с их ссылками."""
     виды = (
@@ -57,7 +57,7 @@ async def мои_виды(
 async def создать_вид(
     данные: ВидВстречиВход,
     эксперт: User = Depends(require_expert),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> dict[str, object]:
     """Создать вид встречи и его расписание.
 
@@ -120,10 +120,35 @@ async def создать_вид(
     }
 
 
+@router.delete("/event-types/{event_type_id}", status_code=204)
+async def удалить_вид(
+    event_type_id: int,
+    эксперт: User = Depends(require_expert),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
+) -> None:
+    """Удалить вид встречи вместе с его заявками.
+
+    Заявки, сеансы и уже созданные письма удаляются каскадом на стороне базы.
+    Расписание эксперта остаётся: оно общее для всех его видов встреч.
+    """
+    вид = (
+        await сессия.execute(
+            select(EventType).where(
+                EventType.id == event_type_id, EventType.owner_id == эксперт.id
+            )
+        )
+    ).scalar_one_or_none()
+
+    if вид is None:
+        raise HTTPException(404, "Такой встречи нет")
+
+    await сессия.delete(вид)
+
+
 @router.get("/bookings")
 async def мои_заявки(
     эксперт: User = Depends(require_expert),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> list[dict[str, object]]:
     """Заявки гостей, ожидающие решения.
 
@@ -166,7 +191,7 @@ async def мои_заявки(
 async def удалить_заявку(
     booking_id: int,
     эксперт: User = Depends(require_expert),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> None:
     """Убрать заявку гостя и освободить её время.
 
@@ -210,7 +235,7 @@ async def удалить_заявку(
 async def сохранить_настройки(
     тело: НастройкиВход,
     эксперт: User = Depends(require_expert),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> dict[str, object]:
     """Сохранить часовой пояс эксперта.
 
@@ -225,7 +250,7 @@ async def сохранить_настройки(
 @router.get("/schedule")
 async def моё_расписание(
     эксперт: User = Depends(require_expert),
-    сессия: AsyncSession = Depends(get_session),
+    сессия: AsyncSession = Depends(get_session, scope="function"),
 ) -> dict[str, object]:
     """Часы приёма эксперта."""
     расписание = (

@@ -7,6 +7,7 @@
 
 import smtplib
 from email.message import EmailMessage
+from email.utils import formataddr
 
 from backend.config import Settings
 
@@ -81,7 +82,9 @@ def отправить(настройки: Settings, *, кому: str, тема:
     """
     письмо = EmailMessage()
     письмо["Subject"] = тема
-    письмо["From"] = настройки.smtp_username
+    # Имя отправителя отделено от адреса: письмо уходит с ящика сервиса, и в
+    # списке писем видно «Сервис записи на встречи», а не адрес организатора.
+    письмо["From"] = formataddr((настройки.mail_from_name, настройки.smtp_username))
     письмо["To"] = кому
     письмо.set_content(текст)
 

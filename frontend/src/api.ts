@@ -148,6 +148,11 @@ export async function создатьВидВстречи(тело: Создан�
   return (await ответ.json()) as ВидВстречи;
 }
 
+/** Удалить вид встречи вместе с его заявками. */
+export async function удалитьВидВстречи(id: number): Promise<void> {
+  await запрос(`/api/panel/event-types/${id}`, { method: "DELETE" });
+}
+
 /** Часовой пояс эксперта. От него зависит всё расписание. */
 export async function сохранитьНастройки(часовойПояс: string) {
   return (
