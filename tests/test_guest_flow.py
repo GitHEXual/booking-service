@@ -423,6 +423,27 @@ class TestПанельЭксперта:
         )
         assert ответ.status_code == 422
 
+    async def test_часовой_пояс_сохраняется(
+        self, клиент_приложения, эксперт, сессия
+    ):
+        # От пояса зависит вся сетка: часы приёма хранятся локальными.
+        ответ = await клиент_приложения.put(
+            "/api/panel/settings", json={"timezone": "Asia/Krasnoyarsk"}
+        )
+        assert ответ.status_code == 200
+        assert ответ.json() == {"timezone": "Asia/Krasnoyarsk"}
+        assert эксперт.timezone == "Asia/Krasnoyarsk"
+
+    async def test_несуществующий_пояс_отклоняется(
+        self, клиент_приложения, эксперт
+    ):
+        # Иначе ошибка вылезла бы при расчёте сетки, и эксперт увидел бы
+        # пустую страницу вместо сообщения.
+        ответ = await клиент_приложения.put(
+            "/api/panel/settings", json={"timezone": "Марс/Филлис"}
+        )
+        assert ответ.status_code == 422
+
     async def test_пустое_окно_отклоняется(self, клиент_приложения, эксперт):
         # Начало позже конца: инвариант И3.
         ответ = await клиент_приложения.post(

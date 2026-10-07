@@ -574,6 +574,19 @@ a {
   white-space: nowrap;
 }
 
+/* Пояс эксперта: строка настроек, не форма встречи. */
+.пояс {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+}
+
+.пояс .поле {
+  min-width: 220px;
+}
+
 .день-заголовок {
   font-size: 0.875rem;
   font-weight: 500;

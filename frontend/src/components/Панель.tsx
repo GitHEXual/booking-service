@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   выйти,
   моиВидыВстреч,
+  сохранитьНастройки,
   моиЗаявки,
   создатьВидВстречи,
   type Заявка,
@@ -180,6 +181,8 @@ export function Панель({ эксперт }: { эксперт: Экспер�
         <main className="содержимое">
           {ошибка && <p className="текст текст--ошибка">{ошибка}</p>}
 
+          <ВыборПояса эксперт={эксперт} onСохранено={обновить} />
+
           {создаём && (
             <НоваяВстреча onГотово={обновить} onОтмена={() => setСоздаём(false)} />
           )}
@@ -350,6 +353,72 @@ function ЗаявкиВстречи({
         )}
       </section>
     </>
+  );
+}
+
+/**
+ * Часовой пояс эксперта.
+ *
+ * Часы приёма хранятся локальным временем, поэтому без пояса сетка
+ * получается в чужом времени и слоты не совпадают с тем, что эксперт видит
+ * на своих часах. Значение по умолчанию угадывается по браузеру.
+ */
+function ВыборПояса({
+  эксперт,
+  onСохранено,
+}: {
+  эксперт: Эксперт;
+  onСохранено: () => Promise<void>;
+}) {
+  const [пояс, setПояс] = useState(эксперт.timezone);
+  const [ошибка, setОшибка] = useState<string | null>(null);
+  const [занято, setЗанято] = useState(false);
+
+  async function сохранить(event: React.FormEvent) {
+    event.preventDefault();
+    setЗанято(true);
+    setОшибка(null);
+    try {
+      await сохранитьНастройки(пояс);
+      await onСохранено();
+    } catch (ошибка) {
+      setОшибка(
+        ошибка instanceof Error
+          ? ошибка.message
+          : "Не удалось сохранить часовой пояс",
+      );
+    } finally {
+      setЗанято(false);
+    }
+  }
+
+  return (
+    <form className="пояс" onSubmit={сохранить}>
+      <label className="поле">
+        <span>Ваш часовой пояс</span>
+        <input
+          value={пояс}
+          onChange={(e) => setПояс(e.target.value)}
+          list="часовые-пояса"
+          placeholder="Asia/Krasnoyarsk"
+          aria-label="Часовой пояс"
+        />
+      </label>
+      <datalist id="часовые-пояса">
+        <option value="Europe/Moscow" />
+        <option value="Asia/Yekaterinburg" />
+        <option value="Asia/Krasnoyarsk" />
+        <option value="Asia/Novosibirsk" />
+        <option value="Asia/Irkutsk" />
+        <option value="Asia/Vladivostok" />
+        <option value="Europe/Kaliningrad" />
+        <option value="UTC" />
+      </datalist>
+      <button className="кнопка кнопка--тихая" disabled={занято}>
+        {занято ? "Сохраняем" : "Сохранить"}
+      </button>
+      {ошибка && <p className="мелкий текст--ошибка">{ошибка}</p>}
+    </form>
   );
 }
 

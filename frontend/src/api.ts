@@ -12,6 +12,8 @@ export interface Эксперт {
   email: string;
   display_name: string;
   role: "organizer" | "admin";
+  /** Часовой пояс IANA. От него зависит вся сетка слотов. */
+  timezone: string;
 }
 
 /** Вид встречи в панели эксперта. */
@@ -133,6 +135,17 @@ export async function создатьВидВстречи(тело: Создан�
     body: JSON.stringify(тело),
   });
   return (await ответ.json()) as ВидВстречи;
+}
+
+/** Часовой пояс эксперта. От него зависит всё расписание. */
+export async function сохранитьНастройки(часовойПояс: string) {
+  return (
+    await запрос("/api/panel/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone: часовойПояс }),
+    })
+  ).json();
 }
 
 /** Что эксперт задаёт при создании вида встречи. */

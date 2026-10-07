@@ -336,4 +336,5 @@ async def кто_я(
         "email": эксперт.email,
         "display_name": эксперт.display_name,
         "role": эксперт.role,
+        "timezone": эксперт.timezone,
     }

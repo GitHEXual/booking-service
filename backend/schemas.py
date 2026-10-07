@@ -6,6 +6,7 @@
 """
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -107,3 +108,20 @@ class ЗаявкаВход(BaseModel):
             raise ValueError("Время слота должно содержать часовой пояс")
         return значение.astimezone(UTC)
 
+
+
+class НастройкиВход(BaseModel):
+    """Настройки эксперта, которые он меняет сам."""
+
+    timezone: str = Field(min_length=1, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def _известный_пояс(cls, значение: str) -> str:
+        # Пояс проверяем через `zoneinfo`: неизвестное имя упало бы потом, при
+        # расчёте сетки, и эксперт увидел бы пустую страницу вместо ошибки.
+        try:
+            ZoneInfo(значение)
+        except (ZoneInfoNotFoundError, ValueError) as ошибка:
+            raise ValueError("Такого часового пояса не бывает") from ошибка
+        return значение

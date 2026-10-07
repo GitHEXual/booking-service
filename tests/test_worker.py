@@ -329,8 +329,45 @@ class TestРассылка:
         assert "недоступен" in письма[0].last_error
 
 
-def настройки():
+def настройки(запас: dict | None = None):
     """Настройки для тестов: почту воркер не трогает, она подменена."""
     from backend.config import get_settings
 
-    return get_settings()
+    if not запас:
+        return get_settings()
+    return get_settings().model_copy(update=запас)
+
+
+class TestОкноНапоминания:
+    async def test_окно_сдвигается_настройкой(
+        self, встреча_скоро, сессия, monkeypatch
+    ):
+        """Запас времени задаётся настройкой, а не константой в коде.
+
+        При проверке приходится ждать, иначе окно в несколько минут не
+        поймать: увеличили запас в настройках, и встреча попала в окно.
+        """
+        широкие = настройки(
+            {
+                "reminder_lead_minutes": 30,
+                "reminder_window_minutes": 10,
+            }
+        )
+        # Сеанс через 25 минут в обычном окне не попал бы.
+        позже = (
+            (
+                await сессия.execute(
+                    select(Session).where(Session.id == встреча_скоро.id)
+                )
+            )
+            .scalar_one()
+        )
+        позже.start_at = datetime.now(UTC) + timedelta(minutes=25)
+
+        assert await worker.подготовить_встречи(сессия, широкие) == 1
+        assert позже.conference_status == "failed", "создание упало без прав"
+
+        # В узком окне та же встреча не попадает.
+        позже.join_url = None
+        позже.conference_status = "not_created"
+        assert await worker.подготовить_встречи(сессия, настройки()) == 0

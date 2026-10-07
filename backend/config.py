@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     smtp_username: str
     smtp_password: str
 
+    # За сколько минут до встречи уходит письмо со ссылкой.
+    reminder_lead_minutes: int = 5
+    # Насколько широким окном воркер ловит встречи. Шире, чем запас: если
+    # проход проспит или письмо зависло после сбоя почты, следующий пройдёт.
+    reminder_window_minutes: int = 7
+
     consent_document_version: str
 
 

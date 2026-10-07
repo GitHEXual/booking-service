@@ -19,7 +19,7 @@ from backend.models import (
     User,
 )
 from backend.routes.auth import require_expert
-from backend.schemas import ВидВстречиВход
+from backend.schemas import ВидВстречиВход, НастройкиВход
 
 router = APIRouter(prefix="/api/panel", tags=["панель"])
 
@@ -155,6 +155,22 @@ async def мои_заявки(
         }
         for заявка, сеанс in строки
     ]
+
+
+@router.put("/settings")
+async def сохранить_настройки(
+    тело: НастройкиВход,
+    эксперт: User = Depends(require_expert),
+    сессия: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    """Сохранить часовой пояс эксперта.
+
+    От него зависит всё расписание: часы приёма хранятся локальными, и без
+    пояса сетка получается в чужом времени.
+    """
+    эксперт.timezone = тело.timezone
+    await сессия.flush()
+    return {"timezone": эксперт.timezone}
 
 
 @router.get("/schedule")
