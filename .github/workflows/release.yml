@@ -69,26 +69,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Версия образа без ведущей `v`: теги в GHCR это `1.0.0`, а не `v1.0.0`.
-          версия="${GITHUB_REF_NAME#v}"
-          cat > notes.md <<EOF
-          ## Образ
-
-          \`\`\`
-          docker pull ghcr.io/${GITHUB_REPOSITORY}:${версия}
-          \`\`\`
-
-          ## Запуск на сервере
-
-          Файл \`docker-compose.prod.yml\` и \`.env.example\` во вложениях релиза.
-
-          \`\`\`
-          cp .env.example .env   # заполнить секреты
-          IMAGE=ghcr.io/${GITHUB_REPOSITORY} TAG=${GITHUB_REF_NAME} \\
-            docker compose -f docker-compose.prod.yml up -d
-          \`\`\`
-
-          **Полный список изменений**: https://github.com/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}
-          EOF
+          # Имена переменных только латиницей: bash кириллицу в них не принимает.
+          version="${GITHUB_REF_NAME#v}"
+          {
+            printf '## Образ\n\n'
+            printf '    docker pull ghcr.io/%s:%s\n\n' "$GITHUB_REPOSITORY" "$version"
+            printf '## Запуск на сервере\n\n'
+            printf 'Файлы `docker-compose.prod.yml` и `.env.example` во вложениях релиза.\n\n'
+            printf '    cp .env.example .env\n'
+            printf '    IMAGE=ghcr.io/%s TAG=%s docker compose -f docker-compose.prod.yml up -d\n\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
+            printf '**Полный список изменений**: https://github.com/%s/commits/%s\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
+          } > notes.md
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --notes-file notes.md \
