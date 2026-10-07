@@ -1,10 +1,11 @@
-"""Фоновая задача: за несколько минут до встречи создать видеовстречу и
-разослать гостям ссылки.
+"""Фоновая задача: встречи в Телемосте, письма организатору и напоминания.
 
-Задача одна, поэтому и запускается одним проходом: находит сеансы, которые
-скоро начнутся, создаёт для каждого встречу и кладёт письма в очередь.
-Письма отправляет отдельный проход, чтобы сбой отправки не сдвигал создание
-встреч и наоборот.
+Встреча создаётся сразу после первой заявки на слот, а не перед началом: так у
+организатора появляется ссылка, которую он видит в письме о заявке. Гость
+получает письмо со ссылкой перед началом, когда она ему действительно нужна.
+
+Проходов три, и они независимы: создание встреч, постановка напоминаний и
+отправка писем. Сбой отправки не сдвигает создание встреч и наоборот.
 """
 
 import asyncio
@@ -20,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend import mail, telemost
 from backend.config import Settings, get_settings
-from backend.models import Booking, EventType, OAuthToken, OutboxEvent, Session
+from backend.models import Booking, EventType, OAuthToken, OutboxEvent, Session, User
 
 журнал = logging.getLogger("worker")
 
@@ -32,12 +33,117 @@ from backend.models import Booking, EventType, OAuthToken, OutboxEvent, Session
 # Три попытки: почта может подвиснуть на пару минут.
 ПОПЫТОК = 3
 
+# Поводы писем. Организатору сообщаем о заявке вместе с созданной встречей,
+# гостю напоминаем перед началом.
+ПИСЬМО_О_ЗАЯВКЕ = "booking_created"
+ПИСЬМО_О_НАЧАЛЕ = "meeting_soon"
 
-async def подготовить_встречи(сессия: AsyncSession, настройки: Settings) -> int:
-    """Создать встречи для сеансов, которые скоро начнутся.
 
-    Возвращает число созданных встреч. Уже созданные и заполненные вручную
-    пропускаются: повторный проход не должен их перетирать.
+async def подготовить_встречи(сессия: AsyncSession) -> int:
+    """Создать встречи для слотов, на которые уже есть заявки.
+
+    Возвращает число обработанных сеансов. Сеансы с готовой ссылкой
+    пропускаются: повторный проход не должен перетирать уже созданную встречу.
+    """
+    сеансы = (
+        (
+            await сессия.execute(
+                select(Session)
+                .join(Booking, Booking.session_id == Session.id)
+                .where(
+                    Booking.status.in_(Booking.СТАТУСЫ_С_МЕСТОМ),
+                    Session.confirmed_at.is_(None),
+                    Session.cancelled_at.is_(None),
+                    Session.join_url.is_(None),
+                )
+                .distinct()
+                .order_by(Session.start_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if not сеансы:
+        return 0
+
+    async with httpx.AsyncClient() as http:
+        for сеанс in сеансы:
+            await _подготовить_сеанс(сессия, http, сеанс)
+    await сессия.commit()
+    return len(сеансы)
+
+
+async def _подготовить_сеанс(
+    сессия: AsyncSession,
+    http: httpx.AsyncClient,
+    сеанс: Session,
+) -> None:
+    """Создать встречу для одного сеанса и сообщить организатору."""
+    # Ссылка могла прийти с ручным способом: тогда встречу не пересоздаём.
+    if сеанс.join_url:
+        return
+
+    заявки = (
+        (
+            await сессия.execute(
+                select(Booking, EventType)
+                .join(EventType, EventType.id == Booking.event_type_id)
+                .where(
+                    Booking.session_id == сеанс.id,
+                    Booking.status.in_(Booking.СТАТУСЫ_С_МЕСТОМ),
+                )
+                .order_by(Booking.id)
+            )
+        )
+        .all()
+    )
+    if not заявки:
+        return
+
+    встреча = await _создать_встречу(сессия, http, сеанс)
+    if встреча is None:
+        return
+
+    сеанс.conference_id = встреча.conference_id
+    сеанс.join_url = встреча.join_url
+    сеанс.meeting_password = _новый_пароль()
+    сеанс.conference_status = "ready"
+
+    эксперт = await _эксперт(сессия, сеанс)
+    if эксперт is None:
+        # Владельца нет, письмо слать некуда. Встреча при этом уже создана.
+        журнал.warning("у сеанса %s нет владельца", сеанс.id)
+        return
+
+    заявка, вид = заявки[0]
+    время = _время_в_поясе(сеанс, эксперт.timezone)
+    сессия.add(
+        OutboxEvent(
+            kind=ПИСЬМО_О_ЗАЯВКЕ,
+            booking_id=заявка.id,
+            to_email=эксперт.email,
+            subject=mail.тема_письма_о_заявке(вид.name),
+            body=mail.текст_письма_организатору(
+                встреча=вид.name,
+                гость=заявка.guest_name,
+                почта=заявка.guest_email,
+                время=время,
+                ссылка=встреча.join_url,
+            ),
+        )
+    )
+
+    журнал.info("встреча создана, сеанс %s", сеанс.id)
+
+
+async def подготовить_напоминания(
+    сессия: AsyncSession, настройки: Settings
+) -> int:
+    """Поставить гостям письма о встрече, до которой осталось несколько минут.
+
+    Возвращает число поставленных писем. Повторно одному гостю письмо не
+    ставится: иначе частый проход задачи засыпал бы человека письмами.
     """
     сейчас = datetime.now(UTC)
     начало = сейчас + timedelta(
@@ -54,7 +160,7 @@ async def подготовить_встречи(сессия: AsyncSession, на
                     Session.start_at <= конец,
                     Session.confirmed_at.is_(None),
                     Session.cancelled_at.is_(None),
-                    Session.join_url.is_(None),
+                    Session.join_url.is_not(None),
                 )
                 .order_by(Session.start_at)
             )
@@ -63,29 +169,13 @@ async def подготовить_встречи(сессия: AsyncSession, на
         .all()
     )
 
-    if not сеансы:
-        return 0
+    поставлено = 0
+    for сеанс in сеансы:
+        эксперт = await _эксперт(сессия, сеанс)
+        if эксперт is None:
+            continue
 
-    async with httpx.AsyncClient() as http:
-        for сеанс in сеансы:
-            await _подготовить_сеанс(сессия, http, сеанс, настройки)
-    await сессия.commit()
-    return len(сеансы)
-
-
-async def _подготовить_сеанс(
-    сессия: AsyncSession,
-    http: httpx.AsyncClient,
-    сеанс: Session,
-    настройки: Settings,
-) -> None:
-    """Создать встречу для одного сеанса и разослать письма."""
-    # Ссылка могла прийти с ручным способом, и тогда письма уже могли уйти.
-    if сеанс.join_url:
-        return
-
-    заявки = (
-        (
+        строки = (
             await сессия.execute(
                 select(Booking, EventType)
                 .join(EventType, EventType.id == Booking.event_type_id)
@@ -93,72 +183,40 @@ async def _подготовить_сеанс(
                     Booking.session_id == сеанс.id,
                     Booking.status.in_(Booking.СТАТУСЫ_С_МЕСТОМ),
                 )
+                .order_by(Booking.id)
             )
-        )
-        .all()
-    )
-    if not заявки:
-        return
+        ).all()
 
-    встреча = await _создать_встречу(сессия, http, сеанс, заявки[0][1], настройки)
-    if встреча is None:
-        return
-
-    сеанс.conference_id = встреча.conference_id
-    сеанс.join_url = встреча.join_url
-    сеанс.meeting_password = _новый_пароль()
-    сеанс.conference_status = "ready"
-
-    пояс = await _пояс_эксперта(сессия, сеанс)
-    время = сеанс.start_at.astimezone(ZoneInfo(пояс)).strftime("%d.%m.%Y в %H:%M")
-
-    for заявка, вид in заявки:
-        сессия.add(
-            OutboxEvent(
-                kind="meeting_soon",
-                booking_id=заявка.id,
-                to_email=заявка.guest_email,
-                subject=mail.тема_письма(вид.name),
-                body=mail.текст_письма(
-                    имя=заявка.guest_name,
-                    встреча=вид.name,
-                    эксперт=вид.owner.display_name if вид.owner else "экспер��",
-                    время=время,
-                    ссылка=встреча.join_url,
-                ),
+        время = _время_в_поясе(сеанс, эксперт.timezone)
+        for заявка, вид in строки:
+            if await _письмо_уже_стоит(сессия, заявка.id, ПИСЬМО_О_НАЧАЛЕ):
+                continue
+            сессия.add(
+                OutboxEvent(
+                    kind=ПИСЬМО_О_НАЧАЛЕ,
+                    booking_id=заявка.id,
+                    to_email=заявка.guest_email,
+                    subject=mail.тема_письма(вид.name),
+                    body=mail.текст_письма(
+                        имя=заявка.guest_name,
+                        встреча=вид.name,
+                        эксперт=эксперт.display_name,
+                        время=время,
+                        ссылка=сеанс.join_url,
+                    ),
+                )
             )
-        )
+            поставлено += 1
 
-    # Организатору письмо тоже: он ведёт встречу и без своей ссылки её не
-    # начать. Текст другой: гостя зовут подключиться, организатора оповещают.
-    почта_эксперта = await _почта_эксперта(сессия, сеанс)
-    if почта_эксперта:
-        сессия.add(
-            OutboxEvent(
-                kind="meeting_soon",
-                booking_id=заявки[0][0].id,
-                to_email=почта_эксперта,
-                subject=mail.тема_письма(заявки[0][1].name),
-                body=mail.текст_письма_эксперту(
-                    встреча=заявки[0][1].name,
-                    гости=len(заявки),
-                    время=время,
-                    ссылка=встреча.join_url,
-                ),
-            )
-        )
-
-    журнал.info(
-        "встреча создана, сеанс %s, гостей %s", сеанс.id, len(заявки)
-    )
+    if поставлено:
+        await сессия.commit()
+    return поставлено
 
 
 async def _создать_встречу(
     сессия: AsyncSession,
     http: httpx.AsyncClient,
     сеанс: Session,
-    вид: EventType,
-    настройки: Settings,
 ) -> telemost.Встреча | None:
     """Создать встречу в Телемосте токеном эксперта.
 
@@ -185,24 +243,32 @@ async def _создать_встречу(
         return None
 
 
-async def _почта_эксперта(сессия: AsyncSession, сеанс: Session) -> str | None:
-    """Почта эксперта для письма ему же."""
-    from backend.models import User
-
-    эксперт = (
+async def _эксперт(сессия: AsyncSession, сеанс: Session) -> User | None:
+    """Владелец сеанса: его токеном создаётся встреча и его почта в письме."""
+    return (
         await сессия.execute(select(User).where(User.id == сеанс.owner_id))
     ).scalar_one_or_none()
-    return эксперт.email if эксперт else None
 
 
-async def _пояс_эксперта(сессия: AsyncSession, сеанс: Session) -> str:
-    """Часовой пояс эксперта, чтобы показать время в его привычном виде."""
-    from backend.models import User
+def _время_в_поясе(сеанс: Session, часовой_пояс: str) -> str:
+    """Время начала в привычном для человека виде."""
+    return сеанс.start_at.astimezone(ZoneInfo(часовой_пояс)).strftime(
+        "%d.%m.%Y в %H:%M"
+    )
 
-    эксперт = (
-        await сессия.execute(select(User).where(User.id == сеанс.owner_id))
+
+async def _письмо_уже_стоит(
+    сессия: AsyncSession, booking_id: int, kind: str
+) -> bool:
+    """Стоит ли уже в очереди письмо этого повода по этой заявке."""
+    есть = (
+        await сессия.execute(
+            select(OutboxEvent.id)
+            .where(OutboxEvent.booking_id == booking_id, OutboxEvent.kind == kind)
+            .limit(1)
+        )
     ).scalar_one_or_none()
-    return эксперт.timezone if эксперт else "UTC"
+    return есть is not None
 
 
 def _новый_пароль() -> str:
@@ -264,7 +330,8 @@ async def проход() -> None:
     настройки = get_settings()
     фабрика = async_sessionmaker(_движок(), expire_on_commit=False)
     async with фабрика() as сессия:
-        await подготовить_встречи(сессия, настройки)
+        await подготовить_встречи(сессия)
+        await подготовить_напоминания(сессия, настройки)
         await разослать(сессия, настройки)
 
 
@@ -277,8 +344,8 @@ def _движок():
 async def запустить(интервал_секунд: int = 60) -> None:
     """Крутить задачу, пока процесс жив.
 
-    Интервал меньше минуты не нужен: окно в семь минут и письма, зависшие
-    после сбоя почты, всё равно уйдут в следующем проходе.
+    Интервал меньше минуты не нужен: встречу можно создать и с задержкой в
+    минуту, а напоминание всё равно уходит в своём окне.
     """
     while True:
         try:

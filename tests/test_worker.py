@@ -1,4 +1,4 @@
-"""Тесты создания встречи в Телемосте и фоновой задачи.
+"""Тесты создания встречи в Телемосте, писем организатору и напоминаний.
 
 Сеть не используется: транспорт httpx подменён, поэтому проверяется ровно то,
 что уходит в Телемост, и то, как на это реагирует приложение.
@@ -77,8 +77,8 @@ class TestСозданиеВстречи:
                 await telemost.создать_встречу(http, access_token="token")
 
 
-class TestТекстПисьма:
-    def test_в_письме_есть_ссылка_и_время(self):
+class TestТекстыПисем:
+    def test_гостю_есть_ссылка_и_время(self):
         текст = mail.текст_письма(
             имя="Пётр",
             встреча="Консультация",
@@ -90,8 +90,23 @@ class TestТекстПисьма:
         assert "15.10.2026 в 10:00" in текст
         assert "Пётр" in текст
 
-    def test_тема_называет_встречу(self):
+    def test_тема_гостю_называет_встречу(self):
         assert "Консультация" in mail.тема_письма("Консультация")
+
+    def test_организатору_есть_гость_почта_и_ссылка(self):
+        текст = mail.текст_письма_организатору(
+            встреча="Консультация",
+            гость="Пётр",
+            почта="petr@example.com",
+            время="15.10.2026 в 10:00",
+            ссылка="https://telemost.yandex.ru/j/1",
+        )
+        assert "Пётр" in текст
+        assert "petr@example.com" in текст
+        assert "https://telemost.yandex.ru/j/1" in текст
+
+    def test_тема_о_заявке(self):
+        assert "Консультация" in mail.тема_письма_о_заявке("Консультация")
 
 
 @pytest.fixture
@@ -135,86 +150,96 @@ async def эксперт_с_токеном(сессия) -> User:
     return человек
 
 
-@pytest.fixture
-async def встреча_скоро(эксперт_с_токеном, сессия) -> Session:
-    """Сеанс, который начнётся через пять минут, с одним гостем."""
-    начало = datetime.now(UTC) + timedelta(minutes=5)
+async def _сеанс_с_гостем(
+    сессия, владелец: User, *, начало: datetime, почта: str = "petr@example.com"
+) -> Session:
+    """Сеанс с одной действующей заявкой."""
     сеанс = Session(
         event_type_id=1,
-        owner_id=эксперт_с_токеном.id,
+        owner_id=владелец.id,
         start_at=начало,
         end_at=начало + timedelta(minutes=30),
     )
     сессия.add(сеанс)
     await сессия.flush()
 
-    заявка = Booking(
-        event_type_id=1,
-        owner_id=эксперт_с_токеном.id,
-        session_id=сеанс.id,
-        guest_name="Пётр",
-        guest_email="petr@example.com",
-        guest_email_bidx=слепой_индекс("petr@example.com"),
-        guest_timezone=КРАСНОЯРСК,
-        consent_version="2026-10-01",
-        consent_at=datetime.now(UTC),
+    сессия.add(
+        Booking(
+            event_type_id=1,
+            owner_id=владелец.id,
+            session_id=сеанс.id,
+            guest_name="Пётр",
+            guest_email=почта,
+            guest_email_bidx=слепой_индекс(почта),
+            guest_timezone=КРАСНОЯРСК,
+            consent_version="2026-10-01",
+            consent_at=datetime.now(UTC),
+        )
     )
-    сессия.add(заявка)
     await сессия.flush()
     return сеанс
 
 
-def подмена_телемоста(создана: dict):
+@pytest.fixture
+async def встреча_скоро(эксперт_с_токеном, сессия) -> Session:
+    """Сеанс, который начнётся через пять минут, с одним гостем."""
+    return await _сеанс_с_гостем(
+        сессия, эксперт_с_токеном, начало=datetime.now(UTC) + timedelta(minutes=5)
+    )
+
+
+def подмена_телемоста() -> dict:
     """Подмена вызова Телемоста: создаём встречу и запоминаем токен."""
-    видел = {}
+    создано: dict = {}
 
     async def создать(http, *, access_token):
-        видел["токен"] = access_token
-        встреча = telemost.Встреча("conf-1", "https://telemost.yandex.ru/j/1")
-        создана.update(встреча=встреча, токен=access_token)
-        return встреча
+        создано["токен"] = access_token
+        return telemost.Встреча("conf-1", "https://telemost.yandex.ru/j/1")
 
-    return видел, создать
+    return создано, создать
 
 
 class TestПодготовкаВстреч:
-    async def test_встреча_создаётся_и_письмо_кладётся(
+    async def test_встреча_создаётся_и_организатору_уходит_письмо(
         self, встреча_скоро, сессия, monkeypatch
     ):
-        создано = {}
-        видел, создать = подмена_телемоста(создано)
+        создано, создать = подмена_телемоста()
         monkeypatch.setattr(telemost, "создать_встречу", создать)
 
-        # Создаём встречу без похода в сеть: подменяем httpx-клиент воркера.
-        настоящий = httpx.AsyncClient
-
-        def пустой_клиент(*args, **kwargs):
-            return настоящий(
-                transport=httpx.MockTransport(
-                    lambda запрос: httpx.Response(201, json={})
-                )
-            )
-
-        monkeypatch.setattr(worker.httpx, "AsyncClient", пустой_клиент)
-
-        assert await worker.подготовить_встречи(сессия, настройки()) == 1
+        assert await worker.подготовить_встречи(сессия) == 1
 
         assert создано["токен"] == "token", "встреча создаётся токеном эксперта"
         assert встреча_скоро.join_url == "https://telemost.yandex.ru/j/1"
         assert встреча_скоро.conference_status == "ready"
         assert встреча_скоро.meeting_password
 
-        # Письма два: гостю со ссылкой и организатору, он ведёт встречу.
+        # Письмо одно: организатору, со ссылкой и данными гостя. Гость получит
+        # своё перед началом встречи.
         письма = (await сессия.execute(select(OutboxEvent))).scalars().all()
-        assert len(письма) == 2
-        все_к = "".join(письмо.body for письмо in письма)
-        assert "https://telemost.yandex.ru/j/1" in все_к
+        assert len(письма) == 1
+        письмо = письма[0]
+        assert письмо.kind == worker.ПИСЬМО_О_ЗАЯВКЕ
+        assert письмо.to_email == "expert@example.com"
+        assert "Пётр" in письмо.body
+        assert "petr@example.com" in письмо.body
+        assert "https://telemost.yandex.ru/j/1" in письмо.body
 
-        гостю = [п for п in письма if п.to_email == "petr@example.com"]
-        эксперту = [п for п in письма if п.to_email == "expert@example.com"]
-        assert len(гостю) == 1, "гостю должно уйти письмо"
-        assert len(эксперту) == 1, "организатору тоже нужна ссылка"
-        assert "Пётр" in гостю[0].body
+    async def test_встреча_создаётся_сразу_а_не_перед_началом(
+        self, эксперт_с_токеном, сессия, monkeypatch
+    ):
+        # Гость записался на встречу через два часа: ссылка нужна организатору
+        # уже сейчас, а не за пять минут до начала.
+        _, создать = подмена_телемоста()
+        monkeypatch.setattr(telemost, "создать_встречу", создать)
+
+        далёкий = await _сеанс_с_гостем(
+            сессия,
+            эксперт_с_токеном,
+            начало=datetime.now(UTC) + timedelta(hours=2),
+        )
+
+        assert await worker.подготовить_встречи(сессия) == 1
+        assert далёкий.join_url == "https://telemost.yandex.ru/j/1"
 
     async def test_ссылка_заданная_вручную_не_перетирается(
         self, встреча_скоро, сессия
@@ -224,22 +249,8 @@ class TestПодготовкаВстреч:
         встреча_скоро.join_url = "https://telemost.yandex.ru/j/ручная"
         await сессия.flush()
 
-        assert await worker.подготовить_встречи(сессия, настройки()) == 0
+        assert await worker.подготовить_встречи(сессия) == 0
         assert встреча_скоро.join_url == "https://telemost.yandex.ru/j/ручная"
-
-    async def test_встреча_далеко_не_трогается(self, сессия, эксперт_с_токеном):
-        # До пяти минут встречи трогать рано: ссылка ещё может измениться.
-        далёкий = Session(
-            event_type_id=1,
-            owner_id=эксперт_с_токеном.id,
-            start_at=datetime.now(UTC) + timedelta(hours=2),
-            end_at=datetime.now(UTC) + timedelta(hours=2, minutes=30),
-        )
-        сессия.add(далёкий)
-        await сессия.flush()
-
-        assert await worker.подготовить_встречи(сессия, настройки()) == 0
-        assert далёкий.join_url is None
 
     async def test_отказ_телемоста_не_роняет_задачу(
         self, встреча_скоро, сессия, monkeypatch
@@ -249,21 +260,66 @@ class TestПодготовкаВстреч:
 
         monkeypatch.setattr(telemost, "создать_встречу", отказ)
 
-        настоящий = httpx.AsyncClient
-
-        def пустой_клиент(*args, **kwargs):
-            return настоящий(
-                transport=httpx.MockTransport(
-                    lambda запрос: httpx.Response(201, json={})
-                )
-            )
-
-        monkeypatch.setattr(worker.httpx, "AsyncClient", пустой_клиент)
-
         # Ошибка не должна вылетать: сеанс просто помечается неудачей.
-        assert await worker.подготовить_встречи(сессия, настройки()) == 1
+        assert await worker.подготовить_встречи(сессия) == 1
         assert встреча_скоро.conference_status == "failed"
         assert встреча_скоро.join_url is None
+
+        письма = (await сессия.execute(select(OutboxEvent))).scalars().all()
+        assert письма == [], "без встречи организатору писать нечего"
+
+
+class TestНапоминанияГостю:
+    async def test_гостю_напоминают_перед_началом(self, встреча_скоро, сессия):
+        встреча_скоро.join_url = "https://telemost.yandex.ru/j/1"
+        await сессия.flush()
+
+        assert await worker.подготовить_напоминания(сессия, настройки()) == 1
+
+        письма = (await сессия.execute(select(OutboxEvent))).scalars().all()
+        assert len(письма) == 1
+        assert письма[0].kind == worker.ПИСЬМО_О_НАЧАЛЕ
+        assert письма[0].to_email == "petr@example.com"
+        assert "https://telemost.yandex.ru/j/1" in письма[0].body
+
+    async def test_напоминание_не_ставится_дважды(self, встреча_скоро, сессия):
+        встреча_скоро.join_url = "https://telemost.yandex.ru/j/1"
+        await сессия.flush()
+
+        assert await worker.подготовить_напоминания(сессия, настройки()) == 1
+        assert await worker.подготовить_напоминания(сессия, настройки()) == 0
+
+        письма = (await сессия.execute(select(OutboxEvent))).scalars().all()
+        assert len(письма) == 1, "гостю не должно уйти два одинаковых письма"
+
+    async def test_далёкой_встрече_не_напоминают(
+        self, эксперт_с_токеном, сессия
+    ):
+        далёкий = await _сеанс_с_гостем(
+            сессия,
+            эксперт_с_токеном,
+            начало=datetime.now(UTC) + timedelta(hours=2),
+        )
+        далёкий.join_url = "https://telemost.yandex.ru/j/1"
+        await сессия.flush()
+
+        assert await worker.подготовить_напоминания(сессия, настройки()) == 0
+
+    async def test_окно_сдвигается_настройкой(
+        self, встреча_скоро, сессия
+    ):
+        """Момент напоминания задаётся настройкой, а не константой в коде."""
+        встреча_скоро.start_at = datetime.now(UTC) + timedelta(minutes=25)
+        встреча_скоро.join_url = "https://telemost.yandex.ru/j/1"
+        await сессия.flush()
+
+        # В обычном окне встреча через 25 минут не попадает.
+        assert await worker.подготовить_напоминания(сессия, настройки()) == 0
+
+        широкие = настройки(
+            {"reminder_lead_minutes": 30, "reminder_window_minutes": 10}
+        )
+        assert await worker.подготовить_напоминания(сессия, широкие) == 1
 
 
 class TestРассылка:
@@ -278,12 +334,14 @@ class TestРассылка:
         monkeypatch.setattr(mail, "отправить", отправить)
 
         заявка = (
-            await сессия.execute(select(Booking).where(Booking.session_id == встреча_скоро.id))
+            await сессия.execute(
+                select(Booking).where(Booking.session_id == встреча_скоро.id)
+            )
         ).scalar_one()
 
         сессия.add(
             OutboxEvent(
-                kind="meeting_soon",
+                kind=worker.ПИСЬМО_О_НАЧАЛЕ,
                 booking_id=заявка.id,
                 to_email="petr@example.com",
                 subject="Встреча начинается",
@@ -307,11 +365,13 @@ class TestРассылка:
         monkeypatch.setattr(mail, "отправить", отказать)
 
         заявка = (
-            await сессия.execute(select(Booking).where(Booking.session_id == встреча_скоро.id))
+            await сессия.execute(
+                select(Booking).where(Booking.session_id == встреча_скоро.id)
+            )
         ).scalar_one()
         сессия.add(
             OutboxEvent(
-                kind="meeting_soon",
+                kind=worker.ПИСЬМО_О_НАЧАЛЕ,
                 booking_id=заявка.id,
                 to_email="petr@example.com",
                 subject="Встреча",
@@ -336,38 +396,3 @@ def настройки(запас: dict | None = None):
     if not запас:
         return get_settings()
     return get_settings().model_copy(update=запас)
-
-
-class TestОкноНапоминания:
-    async def test_окно_сдвигается_настройкой(
-        self, встреча_скоро, сессия, monkeypatch
-    ):
-        """Запас времени задаётся настройкой, а не константой в коде.
-
-        При проверке приходится ждать, иначе окно в несколько минут не
-        поймать: увеличили запас в настройках, и встреча попала в окно.
-        """
-        широкие = настройки(
-            {
-                "reminder_lead_minutes": 30,
-                "reminder_window_minutes": 10,
-            }
-        )
-        # Сеанс через 25 минут в обычном окне не попал бы.
-        позже = (
-            (
-                await сессия.execute(
-                    select(Session).where(Session.id == встреча_скоро.id)
-                )
-            )
-            .scalar_one()
-        )
-        позже.start_at = datetime.now(UTC) + timedelta(minutes=25)
-
-        assert await worker.подготовить_встречи(сессия, широкие) == 1
-        assert позже.conference_status == "failed", "создание упало без прав"
-
-        # В узком окне та же встреча не попадает.
-        позже.join_url = None
-        позже.conference_status = "not_created"
-        assert await worker.подготовить_встречи(сессия, настройки()) == 0
