@@ -405,6 +405,7 @@ a {
   font-size: 0.9375rem;
   font-weight: 500;
   white-space: nowrap;
+  text-decoration: none;
   cursor: pointer;
   transition:
     background-color var(--duration) var(--ease),
@@ -734,6 +735,214 @@ a {
   .колонка,
   .содержимое {
     padding: 16px;
+  }
+}
+
+/* 6. Главная панели: сводка и карточки встреч ----------------------------- */
+
+.шапка__слева {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Подпись пояса. Часового пояса в интерфейсе нет, вместо него смещение. */
+.значок-пояса,
+.часовой-значок {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.навигация__группа {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.навигация__подпись {
+  padding-left: 12px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.кнопка[aria-current="true"] {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.дашборд {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.метрики {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.метрика {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.метрика__число {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.метрика__подпись {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.раздел__шапка {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.карточки {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.карточки--тихие {
+  opacity: 0.65;
+}
+
+.карточка-встречи {
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition:
+    background-color var(--duration) var(--ease),
+    border-color var(--duration) var(--ease);
+}
+
+.карточка-встречи:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.карточка-встречи[data-идёт="да"] {
+  border-color: var(--text);
+}
+
+.карточка-встречи__когда {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.карточка-встречи__дата {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.карточка-встречи__час {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.карточка-встречи__кто {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Длинная почта не должна заезжать под кнопки. */
+.карточка-встречи__кто .строка__почта {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.карточка-встречи__действия {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.метка {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.метка--тихая {
+  background: transparent;
+}
+
+.метка--идёт {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--on-primary);
+}
+
+.метка--ошибка {
+  border-color: #f4c7c3;
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.кнопка--опасная {
+  color: #b42318;
+}
+
+.кнопка--опасная:hover {
+  border-color: #b42318;
+  background: #fef3f2;
+}
+
+@media (max-width: 768px) {
+  .метрики {
+    grid-template-columns: 1fr;
+  }
+
+  .карточка-встречи {
+    grid-template-columns: 1fr;
+  }
+
+  .карточка-встречи__действия {
+    justify-content: flex-start;
   }
 }
 

@@ -3,8 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   выйти,
   моиВидыВстреч,
-  сохранитьНастройки,
   моиЗаявки,
+  сохранитьНастройки,
+  удалитьЗаявку,
   создатьВидВстречи,
   type Заявка,
   type Эксперт,
@@ -14,9 +15,10 @@ import {
 /**
  * Панель эксперта, всё на одной странице.
  *
- * Слева список встреч, справа заявки выбранной. Формы новой встречи тоже
- * справа: отдельный экран и модальное окно заставили бы эксперта держать
- * в голове, где он находится.
+ * Слева навигация: главная со ближайшими встречами и список видов встреч.
+ * Справа содержимое выбранного раздела. Часового пояса в интерфейсе нет:
+ * время всюду показывается в поясе эксперта, а рядом стоит подпись вида
+ * `UTC+7`, чтобы не приходилось держать смещение в голове.
  */
 
 /** Дни недели, где 1 это понедельник. */
@@ -30,16 +32,22 @@ const ДНИ = [
   { номер: 7, коротко: "Вс" },
 ];
 
-/** Часовой пояс гостя, чтобы показывать время в привычном виде. */
-function мой_пояс(): string {
+/** Подпись смещения пояса, например `UTC+7`. */
+function смещениеUTC(пояс: string): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const части = new Intl.DateTimeFormat("en-US", {
+      timeZone: пояс,
+      timeZoneName: "shortOffset",
+    }).formatToParts(new Date());
+    const имя = части.find((часть) => часть.type === "timeZoneName")?.value ?? "";
+    const найдено = /GMT([+-]\d{1,2}(?::\d{2})?)?/.exec(имя);
+    return `UTC${найдено?.[1] ?? ""}`;
   } catch {
     return "UTC";
   }
 }
 
-/** Время заявки. Пояс задаётся явно: без него результат зависит от машины. */
+/** Время встречи. Пояс задаётся явно: без него результат зависит от машины. */
 function время(начало: string, пояс: string): string {
   return new Intl.DateTimeFormat("ru-RU", {
     hour: "2-digit",
@@ -48,59 +56,62 @@ function время(начало: string, пояс: string): string {
   }).format(new Date(начало));
 }
 
-/** Заголовок дня для группы заявок. */
-function деньЗаголовком(начало: string, пояс: string): string {
-  return new Intl.DateTimeFormat("ru-RU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    timeZone: пояс,
-  }).format(new Date(начало));
+/** Интервал встречи, например `15:00–15:30`. */
+function интервал(заявка: Заявка, пояс: string): string {
+  return `${время(заявка.start_at, пояс)}–${время(заявка.end_at, пояс)}`;
 }
 
-/**
- * Заявки, собранные по дням.
- *
- * Список без группировки читается тяжело: записи за вторую неделю стоят в общей куче
- * со старыми, и найти нужную невозможно. По дням видно, что в какой день ждёт.
- */
-function группыПоДням(заявки: Заявка[], пояс: string) {
-  const группы = new Map<string, Заявка[]>();
-  const ключФормат = new Intl.DateTimeFormat("en-CA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+/** Короткая дата, например `6 окт`. */
+function короткаяДата(начало: string, пояс: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "short",
     timeZone: пояс,
-  });
-
-  for (const заявка of заявки) {
-    const ключ = ключФормат.format(new Date(заявка.start_at));
-    const список = группы.get(ключ);
-    if (список) {
-      список.push(заявка);
-    } else {
-      группы.set(ключ, [заявка]);
-    }
-  }
-
-  return [...группы].map(([ключ, список]) => ({
-    ключ,
-    заголовок: капитализировать(деньЗаголовком(список[0].start_at, пояс)),
-    заявки: список,
-  }));
+  }).format(new Date(начало));
 }
 
 function капитализировать(текст: string): string {
   return текст.charAt(0).toUpperCase() + текст.slice(1);
 }
 
+/** Пояс браузера. Нужен только как запасной, пока пояс не сохранён на сервере. */
+function мойПояс(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+/** Идёт ли встреча прямо сейчас. */
+function идётСейчас(заявка: Заявка, сейчас: number): boolean {
+  return (
+    new Date(заявка.start_at).getTime() <= сейчас &&
+    сейчас <= new Date(заявка.end_at).getTime()
+  );
+}
+
+type Раздел = "главная" | "встреча" | "новая";
+
 export function Панель({ эксперт }: { эксперт: Эксперт }) {
   const [виды, setВиды] = useState<ВидВстречи[]>([]);
   const [заявки, setЗаявки] = useState<Заявка[]>([]);
+  const [раздел, setРаздел] = useState<Раздел>("главная");
   const [выбрана, setВыбрана] = useState<number | null>(null);
-  const [создаём, setСоздаём] = useState(false);
   const [ошибка, setОшибка] = useState<string | null>(null);
   const [загружаем, setЗагружаем] = useState(true);
+
+  // Редактора пояса в интерфейсе нет: время показываем в поясе эксперта, а
+  // рядом пишем смещение. Если пояс всё ещё по умолчанию, один раз подставляем
+  // пояс браузера, иначе часы приёма остались бы в UTC.
+  const пояс = эксперт.timezone === "UTC" ? мойПояс() : эксперт.timezone;
+
+  useEffect(() => {
+    const изБраузера = мойПояс();
+    if (эксперт.timezone === "UTC" && изБраузера !== "UTC") {
+      void сохранитьНастройки(изБраузера).catch(() => {});
+    }
+  }, [эксперт.timezone]);
 
   const обновить = useCallback(async () => {
     try {
@@ -110,11 +121,7 @@ export function Панель({ эксперт }: { эксперт: Экспер�
       ]);
       setВиды(списокВидов);
       setЗаявки(списокЗаявок);
-      setВыбрана((была) =>
-        была !== null && списокВидов.some((вид) => вид.id === была)
-          ? была
-          : (списокВидов[0]?.id ?? null),
-      );
+      setОшибка(null);
     } catch (ошибка) {
       setОшибка(
         ошибка instanceof Error ? ошибка.message : "Не удалось загрузить панель",
@@ -133,83 +140,381 @@ export function Панель({ эксперт }: { эксперт: Экспер�
     location.href = "/";
   }, []);
 
-  const активная = виды.find((в) => в.id === выбрана) ?? null;
-  const заявки_встречи = активная
-    ? заявки.filter((з) => з.event_type_id === активная.id)
-    : [];
+  const активная = виды.find((вид) => вид.id === выбрана) ?? null;
+
+  function открытьГлавную() {
+    setРаздел("главная");
+    setВыбрана(null);
+  }
+
+  function открытьВстречу(id: number) {
+    setРаздел("встреча");
+    setВыбрана(id);
+  }
+
+  function открытьСоздание() {
+    setРаздел("новая");
+    setВыбрана(null);
+  }
 
   return (
     <div className="оболочка">
       <header className="шапка">
-        <span className="шапка__название">Запись на встречи</span>
+        <div className="шапка__слева">
+          <span className="шапка__название">Запись на встречи</span>
+          <span className="значок-пояса" title="Время на странице в вашем поясе">
+            {смещениеUTC(пояс)}
+          </span>
+        </div>
         <МенюПользователя эксперт={эксперт} onВыход={выход} />
       </header>
 
       <div className="тело">
         <nav className="колонка">
           <button
-            className="кнопка кнопка--вся"
-            onClick={() => {
-              setСоздаём(true);
-              setВыбрана(null);
-            }}
+            className="кнопка кнопка--вся кнопка--тихая"
+            aria-current={раздел === "главная"}
+            onClick={открытьГлавную}
           >
-            Создать встречу
+            Главная
+          </button>
+
+          <button className="кнопка кнопка--главная кнопка--вся" onClick={открытьСоздание}>
+            + Создать встречу
           </button>
 
           {виды.length > 0 && (
-            <ul className="встречи">
-              {виды.map((вид) => (
-                <li key={вид.id}>
-                  <button
-                    className="встреча"
-                    aria-current={вид.id === выбрана && !создаём}
-                    onClick={() => {
-                      setСоздаём(false);
-                      setВыбрана(вид.id);
-                    }}
-                  >
-                    <span className="встреча__имя">{вид.name}</span>
-                    <span className="встреча__путь">{вид.public_path}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <div className="навигация__группа">
+              <span className="навигация__подпись">Ваши встречи</span>
+              <ul className="встречи">
+                {виды.map((вид) => (
+                  <li key={вид.id}>
+                    <button
+                      className="встреча"
+                      aria-current={раздел === "встреча" && вид.id === выбрана}
+                      onClick={() => открытьВстречу(вид.id)}
+                    >
+                      <span className="встреча__имя">{вид.name}</span>
+                      <span className="встреча__путь">{вид.public_path}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </nav>
 
         <main className="содержимое">
           {ошибка && <p className="текст текст--ошибка">{ошибка}</p>}
 
-          <ВыборПояса эксперт={эксперт} onСохранено={обновить} />
-
-          {создаём && (
-            <НоваяВстреча onГотово={обновить} onОтмена={() => setСоздаём(false)} />
-          )}
-
-          {!создаём && загружаем && (
+          {загружаем ? (
             <p className="текст текст--приглушенный">Загружаем</p>
-          )}
-
-          {!создаём && !загружаем && виды.length === 0 && (
-            <div className="пусто">
-              <h2 className="подзаголовок">Пока нет ни одной встречи</h2>
-              <p className="текст текст--приглушенный">
-                Создайте первую, получите ссылку и отправьте её гостям.
-              </p>
-            </div>
-          )}
-
-          {!создаём && активная && (
-            <ЗаявкиВстречи
-              встреча={активная}
-              заявки={заявки_встречи}
-              пояс={мой_пояс()}
+          ) : раздел === "главная" ? (
+            <Главная
+              виды={виды}
+              заявки={заявки}
+              пояс={пояс}
+              onОбновить={обновить}
+              onСоздать={открытьСоздание}
             />
+          ) : раздел === "новая" ? (
+            <НоваяВстреча
+              пояс={пояс}
+              onГотово={async () => {
+                await обновить();
+                открытьГлавную();
+              }}
+              onОтмена={открытьГлавную}
+            />
+          ) : активная ? (
+            <Встреча
+              встреча={активная}
+              заявки={заявки.filter((з) => з.event_type_id === активная.id)}
+              пояс={пояс}
+              onОбновить={обновить}
+            />
+          ) : (
+            <p className="текст текст--приглушенный">Встреча не найдена</p>
           )}
         </main>
       </div>
     </div>
+  );
+}
+
+/** Главная: сводка и ближайшие встречи одним списком. */
+function Главная({
+  виды,
+  заявки,
+  пояс,
+  onОбновить,
+  onСоздать,
+}: {
+  виды: ВидВстречи[];
+  заявки: Заявка[];
+  пояс: string;
+  onОбновить: () => Promise<void>;
+  onСоздать: () => void;
+}) {
+  const сейчас = Date.now();
+  const предстоящие = заявки
+    .filter((з) => new Date(з.end_at).getTime() >= сейчас)
+    .sort(
+      (а, б) =>
+        new Date(а.start_at).getTime() - new Date(б.start_at).getTime(),
+    );
+  const прошедшие = заявки
+    .filter((з) => new Date(з.end_at).getTime() < сейчас)
+    .sort(
+      (а, б) =>
+        new Date(б.start_at).getTime() - new Date(а.start_at).getTime(),
+    );
+
+  return (
+    <div className="дашборд">
+      <div className="метрики">
+        <Метрика число={виды.length} подпись="виды встреч" />
+        <Метрика число={предстоящие.length} подпись="предстоят" />
+        <Метрика число={заявки.length} подпись="всего заявок" />
+      </div>
+
+      <section className="группа">
+        <div className="раздел__шапка">
+          <h2 className="подзаголовок">Ближайшие встречи</h2>
+          <span className="часовой-значок">время в {смещениеUTC(пояс)}</span>
+        </div>
+
+        {предстоящие.length === 0 ? (
+          <div className="пусто">
+            <p className="текст">Пока никто не записался</p>
+            <p className="мелкий текст--приглушенный">
+              {виды.length === 0
+                ? "Создайте встречу и отправьте гостям ссылку."
+                : "Отправьте гостям ссылку на встречу, и заявки появятся здесь."}
+            </p>
+            <div>
+              <button className="кнопка" onClick={onСоздать}>
+                Создать встречу
+              </button>
+            </div>
+          </div>
+        ) : (
+          <ul className="карточки">
+            {предстоящие.map((заявка) => (
+              <КарточкаЗаявки
+                key={заявка.id}
+                заявка={заявка}
+                пояс={пояс}
+                сейчас={сейчас}
+                onОбновить={onОбновить}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {прошедшие.length > 0 && (
+        <section className="группа">
+          <div className="раздел__шапка">
+            <h2 className="подзаголовок">Прошедшие</h2>
+          </div>
+          <ul className="карточки карточки--тихие">
+            {прошедшие.map((заявка) => (
+              <КарточкаЗаявки
+                key={заявка.id}
+                заявка={заявка}
+                пояс={пояс}
+                сейчас={сейчас}
+                onОбновить={onОбновить}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function Метрика({ число, подпись }: { число: number; подпись: string }) {
+  return (
+    <div className="метрика">
+      <span className="метрика__число">{число}</span>
+      <span className="метрика__подпись">{подпись}</span>
+    </div>
+  );
+}
+
+/** Карточка одной заявки: кто, когда, ссылка и удаление. */
+function КарточкаЗаявки({
+  заявка,
+  пояс,
+  сейчас,
+  onОбновить,
+}: {
+  заявка: Заявка;
+  пояс: string;
+  сейчас: number;
+  onОбновить: () => Promise<void>;
+}) {
+  const [удаляем, setУдаляем] = useState(false);
+  const [ошибка, setОшибка] = useState<string | null>(null);
+  const идёт = идётСейчас(заявка, сейчас);
+
+  async function убрать() {
+    if (!window.confirm(`Убрать заявку гостя ${заявка.name}?`)) return;
+    setУдаляем(true);
+    setОшибка(null);
+    try {
+      await удалитьЗаявку(заявка.id);
+      await onОбновить();
+    } catch (ошибка) {
+      setОшибка(
+        ошибка instanceof Error ? ошибка.message : "Не удалось убрать заявку",
+      );
+      setУдаляем(false);
+    }
+  }
+
+  return (
+    <li className="карточка-встречи" data-идёт={идёт ? "да" : undefined}>
+      <div className="карточка-встречи__когда">
+        <span className="карточка-встречи__дата">
+          {капитализировать(короткаяДата(заявка.start_at, пояс))}
+        </span>
+        <span className="карточка-встречи__час">{интервал(заявка, пояс)}</span>
+        {идёт && <span className="метка метка--идёт">идёт сейчас</span>}
+      </div>
+
+      <div className="карточка-встречи__кто">
+        <p className="строка__имя">{заявка.name}</p>
+        <p className="строка__почта">{заявка.email}</p>
+        <span className="метка метка--тихая">{заявка.event_type_name}</span>
+      </div>
+
+      <div className="карточка-встречи__действия">
+        {заявка.join_url ? (
+          <a
+            className="кнопка кнопка--главная кнопка--тихая"
+            href={заявка.join_url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Подключиться
+          </a>
+        ) : заявка.conference_status === "failed" ? (
+          <span className="метка метка--ошибка">Встреча не создалась</span>
+        ) : (
+          <span className="метка">Готовим ссылку</span>
+        )}
+        <button
+          className="кнопка кнопка--тихая кнопка--опасная"
+          onClick={убрать}
+          disabled={удаляем}
+        >
+          {удаляем ? "Убираем" : "Удалить"}
+        </button>
+      </div>
+
+      {ошибка && <p className="мелкий текст--ошибка">{ошибка}</p>}
+    </li>
+  );
+}
+
+/** Экран одного вида встречи: ссылка, расписание и заявки. */
+function Встреча({
+  встреча,
+  заявки,
+  пояс,
+  onОбновить,
+}: {
+  встреча: ВидВстречи;
+  заявки: Заявка[];
+  пояс: string;
+  onОбновить: () => Promise<void>;
+}) {
+  const [скопировано, setСкопировано] = useState(false);
+  const ссылка = `${location.origin}${встреча.public_path}`;
+  const сейчас = Date.now();
+  const предстоящие = [...заявки].sort(
+    (а, б) => new Date(а.start_at).getTime() - new Date(б.start_at).getTime(),
+  );
+
+  async function скопировать() {
+    try {
+      await navigator.clipboard.writeText(ссылка);
+      setСкопировано(true);
+      setTimeout(() => setСкопировано(false), 2000);
+    } catch {
+      // Буфер обмена может быть недоступен: ссылку можно выделить руками.
+    }
+  }
+
+  return (
+    <>
+      <div className="группа">
+        <div>
+          <h1 className="заголовок">{встреча.name}</h1>
+          {встреча.description && (
+            <p className="текст текст--приглушенный">{встреча.description}</p>
+          )}
+        </div>
+
+        <dl className="свойства">
+          <div className="строка">
+            <dt className="мелкий текст--приглушенный">Ссылка для гостей</dt>
+            <dd className="моно">{ссылка}</dd>
+          </div>
+          <div className="строка">
+            <dt className="мелкий текст--приглушенный">Длительность</dt>
+            <dd>{встреча.duration_minutes} мин</dd>
+          </div>
+        </dl>
+
+        <div className="пара">
+          <button className="кнопка кнопка--главная" onClick={скопировать}>
+            {скопировано ? "Ссылка скопирована" : "Скопировать ссылку"}
+          </button>
+          <a
+            className="кнопка"
+            href={встреча.public_path}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Открыть страницу гостя
+          </a>
+        </div>
+      </div>
+
+      <div className="разделитель" />
+
+      <section className="группа">
+        <div className="раздел__шапка">
+          <h2 className="подзаголовок">Записались</h2>
+          {заявки.length > 0 && <span className="счётчик">{заявки.length}</span>}
+        </div>
+
+        {предстоящие.length === 0 ? (
+          <div className="пусто">
+            <p className="текст">Пока никто не записался</p>
+            <p className="мелкий текст--приглушенный">
+              Отправьте ссылку гостям, и заявки появятся здесь.
+            </p>
+          </div>
+        ) : (
+          <ul className="карточки">
+            {предстоящие.map((заявка) => (
+              <КарточкаЗаявки
+                key={заявка.id}
+                заявка={заявка}
+                пояс={пояс}
+                сейчас={сейчас}
+                onОбновить={onОбновить}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -244,7 +549,9 @@ function МенюПользователя({
         aria-expanded={открыто}
       >
         {эксперт.display_name}
-        <span className="меню__подпись">{эксперт.role === "admin" ? "admin" : "эксперт"}</span>
+        <span className="меню__подпись">
+          {эксперт.role === "admin" ? "admin" : "эксперт"}
+        </span>
       </button>
 
       {открыто && (
@@ -265,167 +572,12 @@ function МенюПользователя({
   );
 }
 
-function ЗаявкиВстречи({
-  встреча,
-  заявки,
-  пояс,
-}: {
-  встреча: ВидВстречи;
-  заявки: Заявка[];
-  пояс: string;
-}) {
-  const [скопировано, setСкопировано] = useState(false);
-  const ссылка = `${location.origin}${встреча.public_path}`;
-
-  async function скопировать() {
-    try {
-      await navigator.clipboard.writeText(ссылка);
-      setСкопировано(true);
-      setTimeout(() => setСкопировано(false), 2000);
-    } catch {
-      // Буфер обмена может быть недоступен: ссылка и так на экране,
-      // её можно выделить и скопировать руками.
-    }
-  }
-
-  return (
-    <>
-      <div className="группа">
-        <div>
-          <h1 className="заголовок">{встреча.name}</h1>
-          {встреча.description && (
-            <p className="текст текст--приглушенный">{встреча.description}</p>
-          )}
-        </div>
-
-        <dl className="свойства">
-          <div className="строка">
-            <dt className="мелкий текст--приглушенный">Ссылка для гостей</dt>
-            <dd className="моно">{ссылка}</dd>
-          </div>
-          <div className="строка">
-            <dt className="мелкий текст--приглушенный">Длительность</dt>
-            <dd>{встреча.duration_minutes} мин</dd>
-          </div>
-        </dl>
-
-        <div>
-          <button className="кнопка" onClick={скопировать}>
-            {скопировано ? "Ссылка скопирована" : "Скопировать ссылку"}
-          </button>
-        </div>
-      </div>
-
-      <div className="разделитель" />
-
-      <section className="группа">
-        <div className="календарь__шапка">
-          <h2 className="подзаголовок">Записались</h2>
-          {заявки.length > 0 && <span className="счётчик">{заявки.length}</span>}
-        </div>
-
-        {заявки.length === 0 ? (
-          <div className="пусто">
-            <p className="текст">Пока никто не записался</p>
-            <p className="мелкий текст--приглушенный">
-              Отправьте ссылку гостям, и заявки появятся здесь.
-            </p>
-          </div>
-        ) : (
-          группыПоДням(заявки, пояс).map((день) => (
-            <div className="группа" key={день.ключ}>
-              <h3 className="день-заголовок">{день.заголовок}</h3>
-              <ul>
-                {день.заявки.map((заявка) => (
-                  <li className="строка" key={заявка.id}>
-                    <div>
-                      <p className="строка__имя">{заявка.name}</p>
-                      <p className="строка__почта">{заявка.email}</p>
-                    </div>
-                    <p className="строка__время">
-                      {время(заявка.start_at, пояс)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))
-        )}
-      </section>
-    </>
-  );
-}
-
-/**
- * Часовой пояс эксперта.
- *
- * Часы приёма хранятся локальным временем, поэтому без пояса сетка
- * получается в чужом времени и слоты не совпадают с тем, что эксперт видит
- * на своих часах. Значение по умолчанию угадывается по браузеру.
- */
-function ВыборПояса({
-  эксперт,
-  onСохранено,
-}: {
-  эксперт: Эксперт;
-  onСохранено: () => Promise<void>;
-}) {
-  const [пояс, setПояс] = useState(эксперт.timezone);
-  const [ошибка, setОшибка] = useState<string | null>(null);
-  const [занято, setЗанято] = useState(false);
-
-  async function сохранить(event: React.FormEvent) {
-    event.preventDefault();
-    setЗанято(true);
-    setОшибка(null);
-    try {
-      await сохранитьНастройки(пояс);
-      await onСохранено();
-    } catch (ошибка) {
-      setОшибка(
-        ошибка instanceof Error
-          ? ошибка.message
-          : "Не удалось сохранить часовой пояс",
-      );
-    } finally {
-      setЗанято(false);
-    }
-  }
-
-  return (
-    <form className="пояс" onSubmit={сохранить}>
-      <label className="поле">
-        <span>Ваш часовой пояс</span>
-        <input
-          value={пояс}
-          onChange={(e) => setПояс(e.target.value)}
-          list="часовые-пояса"
-          placeholder="Asia/Krasnoyarsk"
-          aria-label="Часовой пояс"
-        />
-      </label>
-      <datalist id="часовые-пояса">
-        <option value="Europe/Moscow" />
-        <option value="Asia/Yekaterinburg" />
-        <option value="Asia/Krasnoyarsk" />
-        <option value="Asia/Novosibirsk" />
-        <option value="Asia/Irkutsk" />
-        <option value="Asia/Vladivostok" />
-        <option value="Europe/Kaliningrad" />
-        <option value="UTC" />
-      </datalist>
-      <button className="кнопка кнопка--тихая" disabled={занято}>
-        {занято ? "Сохраняем" : "Сохранить"}
-      </button>
-      {ошибка && <p className="мелкий текст--ошибка">{ошибка}</p>}
-    </form>
-  );
-}
-
 function НоваяВстреча({
+  пояс,
   onГотово,
   onОтмена,
 }: {
+  пояс: string;
   onГотово: () => Promise<void>;
   onОтмена: () => void;
 }) {
@@ -458,13 +610,10 @@ function НоваяВстреча({
         schedule: { weekdays: дни, start_time: начало, end_time: конец },
       });
       await onГотово();
-      setИмя("");
-      setАдрес("");
     } catch (ошибка) {
       setОшибка(
         ошибка instanceof Error ? ошибка.message : "Не удалось создать встречу",
       );
-    } finally {
       setЗанято(false);
     }
   }
@@ -472,6 +621,9 @@ function НоваяВстреча({
   return (
     <form className="группа" onSubmit={отправить}>
       <h1 className="заголовок">Новая встреча</h1>
+      <p className="текст текст--приглушенный">
+        Часы приёма указываются в вашем поясе. Сейчас это {смещениеUTC(пояс)}.
+      </p>
 
       <label className="поле">
         <span>Название</span>
@@ -550,12 +702,7 @@ function НоваяВстреча({
       {ошибка && <p className="текст текст--ошибка">{ошибка}</p>}
 
       <div className="пара">
-        <button
-          type="button"
-          className="кнопка"
-          onClick={onОтмена}
-          disabled={занято}
-        >
+        <button type="button" className="кнопка" onClick={onОтмена} disabled={занято}>
           Отмена
         </button>
         <button

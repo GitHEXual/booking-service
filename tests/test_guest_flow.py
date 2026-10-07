@@ -348,6 +348,58 @@ class TestПанельЭксперта:
         assert строки[0]["email"] == "petr@mail.ru"
         assert строки[0]["status"] == "pending"
 
+    async def test_список_заявок_годится_для_дашборда(
+        self, клиент_приложения, эксперт
+    ):
+        # Панели нужны название вида встречи и состояние встречи в Телемосте,
+        # чтобы показать ближайшие встречи одним списком.
+        начало = await будущий_слот(клиент_приложения)
+        await клиент_приложения.post(
+            f"/api/{ЛОГИН}/{SLUG}/bookings", json=заявка(начало)
+        )
+
+        строка = (await клиент_приложения.get("/api/panel/bookings")).json()[0]
+        assert строка["event_type_name"] == "Консультация по проекту"
+        assert строка["join_url"] is None
+        assert строка["conference_status"] == "not_created"
+
+    async def test_заявку_можно_удалить(self, клиент_приложения, эксперт, сессия):
+        from backend.models import Session as Сеанс
+
+        начало = await будущий_слот(клиент_приложения)
+        await клиент_приложения.post(
+            f"/api/{ЛОГИН}/{SLUG}/bookings", json=заявка(начало)
+        )
+        заявка_id = (await клиент_приложения.get("/api/panel/bookings")).json()[0]["id"]
+
+        ответ = await клиент_приложения.delete(f"/api/panel/bookings/{заявка_id}")
+        assert ответ.status_code == 204
+
+        assert (await клиент_приложения.get("/api/panel/bookings")).json() == []
+        assert (await сессия.execute(select(Booking))).scalars().all() == []
+        # Сеанс без заявок тоже уходит: иначе на то же время пришлось бы
+        # переиспользовать ссылку на старую встречу.
+        assert (await сессия.execute(select(Сеанс))).scalars().all() == []
+
+    async def test_освобождённое_время_снова_доступно(self, клиент_приложения, эксперт):
+        начало = await будущий_слот(клиент_приложения)
+        await клиент_приложения.post(
+            f"/api/{ЛОГИН}/{SLUG}/bookings", json=заявка(начало)
+        )
+        заявка_id = (await клиент_приложения.get("/api/panel/bookings")).json()[0]["id"]
+        await клиент_приложения.delete(f"/api/panel/bookings/{заявка_id}")
+
+        заново = await клиент_приложения.post(
+            f"/api/{ЛОГИН}/{SLUG}/bookings",
+            json=заявка(начало, почта="drugoy@mail.ru"),
+        )
+        assert заново.status_code == 201
+
+    async def test_чужой_заявки_нет(self, клиент_приложения, эксперт):
+        assert (
+            await клиент_приложения.delete("/api/panel/bookings/999")
+        ).status_code == 404
+
     async def test_у_эксперта_есть_публичная_ссылка(self, клиент_приложения, эксперт):
         ответ = await клиент_приложения.get("/api/panel/event-types")
         assert ответ.status_code == 200

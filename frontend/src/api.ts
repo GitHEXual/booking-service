@@ -33,12 +33,18 @@ export interface Заявка {
   id: number;
   /** К какой встрече относится: по нему заявка попадает в нужный список. */
   event_type_id: number;
+  /** Название вида встречи: на главной заявки собраны в один список. */
+  event_type_name: string;
   name: string;
   email: string;
   status: "pending" | "confirmed";
   start_at: string;
   end_at: string;
   timezone: string;
+  /** Ссылка на встречу в Телемосте. Пусто, пока встреча создаётся. */
+  join_url: string | null;
+  /** Состояние встречи у провайдера. */
+  conference_status: "not_created" | "ready" | "failed";
 }
 
 /** Страница гостя: то, на что он записывается. */
@@ -125,6 +131,11 @@ export async function моиВидыВстреч(): Promise<ВидВстречи
 /** Заявки гостей, ждущие решения. */
 export async function моиЗаявки(): Promise<Заявка[]> {
   return (await запрос("/api/panel/bookings")).json();
+}
+
+/** Убрать заявку гостя и освободить её время. */
+export async function удалитьЗаявку(id: number): Promise<void> {
+  await запрос(`/api/panel/bookings/${id}`, { method: "DELETE" });
 }
 
 /** Создать вид встречи вместе с его расписанием. */

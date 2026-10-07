@@ -5,7 +5,7 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -128,12 +128,14 @@ async def мои_заявки(
     """Заявки гостей, ожидающие решения.
 
     Сортировка по времени встречи: так эксперт смотрит на список в порядке,
-    в котором встречи будут проходить.
+    в котором встречи будут проходить. Ссылка на встречу отдаётся сразу:
+    панель показывает её как ближайшую встречу с кнопкой подключения.
     """
     строки = (
         await сессия.execute(
-            select(Booking, Session)
+            select(Booking, Session, EventType)
             .join(Session, Session.id == Booking.session_id)
+            .join(EventType, EventType.id == Booking.event_type_id)
             .where(
                 Booking.owner_id == эксперт.id,
                 Booking.status.in_(Booking.СТАТУСЫ_С_МЕСТОМ),
@@ -146,15 +148,62 @@ async def мои_заявки(
         {
             "id": заявка.id,
             "event_type_id": заявка.event_type_id,
+            "event_type_name": вид.name,
             "name": заявка.guest_name,
             "email": заявка.guest_email,
             "status": заявка.status,
-            "start_at": заявка.session.start_at.isoformat(),
-            "end_at": заявка.session.end_at.isoformat(),
+            "start_at": сеанс.start_at.isoformat(),
+            "end_at": сеанс.end_at.isoformat(),
             "timezone": заявка.guest_timezone,
+            "join_url": сеанс.join_url,
+            "conference_status": сеанс.conference_status,
         }
-        for заявка, сеанс in строки
+        for заявка, сеанс, вид in строки
     ]
+
+
+@router.delete("/bookings/{booking_id}", status_code=204)
+async def удалить_заявку(
+    booking_id: int,
+    эксперт: User = Depends(require_expert),
+    сессия: AsyncSession = Depends(get_session),
+) -> None:
+    """Убрать заявку гостя и освободить её время.
+
+    Если в слоте больше никого не осталось, удаляется и сеанс: сеанс это
+    хранимая запись о занятом времени, и без заявок хранить нечего. Вместе с
+    ним уходит и созданная ранее встреча, иначе следующая заявка на то же
+    время переиспользовала бы чужую ссылку на Телемост.
+    """
+    заявка = (
+        await сессия.execute(
+            select(Booking).where(
+                Booking.id == booking_id, Booking.owner_id == эксперт.id
+            )
+        )
+    ).scalar_one_or_none()
+
+    if заявка is None:
+        raise HTTPException(404, "Такой заявки нет")
+
+    session_id = заявка.session_id
+    await сессия.delete(заявка)
+    await сессия.flush()
+
+    осталось = (
+        await сессия.execute(
+            select(func.count())
+            .select_from(Booking)
+            .where(Booking.session_id == session_id)
+        )
+    ).scalar_one()
+
+    if осталось == 0:
+        сеанс = (
+            await сессия.execute(select(Session).where(Session.id == session_id))
+        ).scalar_one_or_none()
+        if сеанс is not None:
+            await сессия.delete(сеанс)
 
 
 @router.put("/settings")
