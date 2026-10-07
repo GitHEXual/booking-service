@@ -67,7 +67,29 @@ jobs:
       - name: Создать релиз
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${GITHUB_REF_NAME}"
-          --title "${GITHUB_REF_NAME}"
-          --generate-notes
+        run: |
+          # Версия образа без ведущей `v`: теги в GHCR это `1.0.0`, а не `v1.0.0`.
+          версия="${GITHUB_REF_NAME#v}"
+          cat > notes.md <<EOF
+          ## Образ
+
+          \`\`\`
+          docker pull ghcr.io/${GITHUB_REPOSITORY}:${версия}
+          \`\`\`
+
+          ## Запуск на сервере
+
+          Файл \`docker-compose.prod.yml\` и \`.env.example\` во вложениях релиза.
+
+          \`\`\`
+          cp .env.example .env   # заполнить секреты
+          IMAGE=ghcr.io/${GITHUB_REPOSITORY} TAG=${GITHUB_REF_NAME} \\
+            docker compose -f docker-compose.prod.yml up -d
+          \`\`\`
+
+          **Полный список изменений**: https://github.com/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}
+          EOF
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            docker-compose.prod.yml .env.example
