@@ -49,12 +49,15 @@ def _подключить_интерфейс(приложение: FastAPI) -> N
 
     индекс = ВЕБ_КАТАЛОГ / "index.html"
 
-    @приложение.get("/{путь:path}", include_in_schema=False)
-    async def страница(путь: str) -> FileResponse:
-        if путь.startswith(СЛУЖЕБНЫЕ):
+    # Имя параметра маршрута только латиницей: Starlette разбирает путь
+    # регуляркой, которая кириллицу в имени не принимает, и тогда маршрут
+    # становится буквальным и никогда не совпадает.
+    @приложение.get("/{full_path:path}", include_in_schema=False)
+    async def страница(full_path: str) -> FileResponse:
+        if full_path.startswith(СЛУЖЕБНЫЕ):
             raise HTTPException(404, "Не найдено")
-        файл = ВЕБ_КАТАЛОГ / путь
-        if путь and файл.is_file():
+        файл = ВЕБ_КАТАЛОГ / full_path
+        if full_path and файл.is_file():
             return FileResponse(файл)
         return FileResponse(индекс)
 
