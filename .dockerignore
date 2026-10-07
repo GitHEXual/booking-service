@@ -1,0 +1,19 @@
+# Файлы, которые не нужны внутри образа.
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/venv
+**/*.egg-info
+**/node_modules
+**/dist
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+docs
+README.md
+*.log

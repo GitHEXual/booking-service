@@ -1,0 +1,50 @@
+# Запуск опубликованного образа из GHCR, без сборки на месте.
+#
+#   IMAGE=ghcr.io/<владелец>/<репозиторий> TAG=v1.0.0 \
+#     docker compose -f docker-compose.prod.yml up -d
+#
+# Образ отдаёт и API, и собранный интерфейс, поэтому отдельный веб-сервер не
+# нужен. Секреты и адреса берутся из `.env` (по образцу `.env.example`).
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-booking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-booking}
+      POSTGRES_DB: ${POSTGRES_DB:-booking}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-booking}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  api:
+    image: ${IMAGE:-ghcr.io/OWNER/REPO}:${TAG:-latest}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-booking}:${POSTGRES_PASSWORD:-booking}@db:5432/${POSTGRES_DB:-booking}
+    # Миграции накатываются перед стартом: база в томе, схему надо догнать.
+    command: sh -c "alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: ${IMAGE:-ghcr.io/OWNER/REPO}:${TAG:-latest}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-booking}:${POSTGRES_PASSWORD:-booking}@db:5432/${POSTGRES_DB:-booking}
+    command: ["python", "-m", "backend.worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
